@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Wise MLOps Agent</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app-background" aria-hidden="true"></div>
+    <main class="shell">
+      <aside class="sidebar">
+        <header class="brand">
+          <div class="brand-mark">W</div>
+          <div>
+            <h1>Wise MLOps Agent</h1>
+            <p>Runbook-grade diagnostics</p>
+          </div>
+        </header>
+
+        <section class="context-panel">
+          <div class="panel-title">
+            <span>上下文</span>
+            <button id="newConversation" class="icon-button" type="button" title="新会话">+</button>
+          </div>
+          <label>
+            用户
+            <input id="userId" value="l0123456" />
+          </label>
+          <label>
+            来源
+            <select id="service">
+              <option>Wise</option>
+              <option>MTP</option>
+              <option>MEP</option>
+            </select>
+          </label>
+          <label>
+            场景
+            <input id="scene" value="模型任务" />
+          </label>
+          <label class="switch">
+            <input id="deepThinking" type="checkbox" />
+            <span>深度思考</span>
+          </label>
+        </section>
+
+        <section class="history-panel">
+          <div class="panel-title">
+            <span>历史会话</span>
+            <button id="loadHistory" class="ghost-button" type="button">刷新</button>
+          </div>
+          <label class="search-wrap">
+            <span>搜索</span>
+            <input id="historySearch" placeholder="搜索会话或标题" />
+          </label>
+          <div class="history" id="history"></div>
+        </section>
+      </aside>
+
+      <section class="workspace">
+        <header class="topbar">
+          <div>
+            <p id="conversationLabel">当前会话</p>
+            <h2 id="title">MTP训练任务诊断</h2>
+          </div>
+          <div class="status-strip">
+            <span>FastAPI</span>
+            <span>SSE</span>
+            <span>SQLite</span>
+          </div>
+        </header>
+
+        <section class="messages" id="messages">
+          <div class="empty-state" id="emptyState">
+            <div class="terminal-mark" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="m7 8 4 4-4 4" />
+                <path d="M13 17h6" />
+              </svg>
+            </div>
+            <div class="empty-title">Wise MLOps Agent</div>
+            <p class="empty-subtitle">专业智能诊断伙伴，为模型任务、资源异常和平台日志提供排查建议。</p>
+            <div class="empty-tags">
+              <span>Memory</span>
+              <span>OOM</span>
+              <span>GPU</span>
+              <span>Checkpoint</span>
+              <span>Dataset</span>
+            </div>
+          </div>
+        </section>
+
+        <form class="composer" id="composer">
+          <div class="composer-box">
+            <textarea id="query" rows="1" placeholder="输入您的问题，按 Enter 发送...">1401027 insufficient memory 报错</textarea>
+            <button id="send" type="submit" aria-label="发送">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5 12h13" />
+                <path d="m13 6 6 6-6 6" />
+              </svg>
+            </button>
+          </div>
+          <p class="composer-note">AI 可能产生不准确的信息，请核实重要内容。</p>
+        </form>
+      </section>
+    </main>
+
+    <dialog id="feedbackDialog">
+      <form method="dialog" class="feedback-form">
+        <h3>反馈原因</h3>
+        <textarea id="feedbackText" rows="4" placeholder="补充你的意见"></textarea>
+        <div class="chips">
+          <label><input type="checkbox" value="回答没有用" />回答没有用</label>
+          <label><input type="checkbox" value="没有理解我的意图" />没有理解我的意图</label>
+          <label><input type="checkbox" value="缺少操作步骤" />缺少操作步骤</label>
+        </div>
+        <div class="dialog-actions">
+          <button value="cancel">取消</button>
+          <button id="submitUnlike" value="default" class="primary">提交</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
