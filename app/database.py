@@ -1,6 +1,7 @@
 import json
 import os
 import sqlite3
+import uuid
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -67,6 +68,31 @@ def init_db(db_path: Optional[Path] = None) -> None:
               reason TEXT,
               timestamp TEXT,
               PRIMARY KEY (answer_message_id, user_id, conversation_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS t_knowledge_file (
+              knowledge_id TEXT NOT NULL,
+              filename TEXT NOT NULL UNIQUE,
+              title TEXT NOT NULL,
+              file_path TEXT NOT NULL,
+              size INTEGER NOT NULL DEFAULT 0,
+              content_hash TEXT NOT NULL,
+              preview TEXT,
+              created_at TEXT,
+              updated_at TEXT,
+              PRIMARY KEY (knowledge_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS t_knowledge_file_revision (
+              revision_id TEXT NOT NULL,
+              knowledge_id TEXT NOT NULL,
+              filename TEXT NOT NULL,
+              title TEXT NOT NULL,
+              content TEXT NOT NULL,
+              size INTEGER NOT NULL DEFAULT 0,
+              content_hash TEXT NOT NULL,
+              timestamp TEXT,
+              PRIMARY KEY (revision_id)
             );
             """
         )
@@ -230,3 +256,126 @@ def list_chats(user_id: str, conversation_id: str, page: int, page_size: int) ->
             }
         )
     return result
+
+
+def upsert_knowledge_file(
+    filename: str,
+    title: str,
+    file_path: str,
+    content: str,
+    content_hash: str,
+    size: int,
+    preview: str,
+    create_revision: bool = True,
+    timestamp: Optional[str] = None,
+) -> Dict[str, Any]:
+    effective_timestamp = timestamp or now_text()
+    with connect() as conn:
+        existing = conn.execute(
+            "SELECT knowledge_id, created_at, updated_at, content_hash FROM t_knowledge_file WHERE filename = ?",
+            (filename,),
+        ).fetchone()
+        knowledge_id = existing["knowledge_id"] if existing else str(uuid.uuid4())
+        created_at = existing["created_at"] if existing else effective_timestamp
+        content_changed = not existing or existing["content_hash"] != content_hash
+        updated_at = effective_timestamp if (create_revision or content_changed) else existing["updated_at"]
+
+        conn.execute(
+            """
+            INSERT INTO t_knowledge_file(
+              knowledge_id, filename, title, file_path, size, content_hash, preview, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(filename)
+            DO UPDATE SET
+              title = excluded.title,
+              file_path = excluded.file_path,
+              size = excluded.size,
+              content_hash = excluded.content_hash,
+              preview = excluded.preview,
+              updated_at = excluded.updated_at
+            """,
+            (knowledge_id, filename, title, file_path, size, content_hash, preview, created_at, updated_at),
+        )
+
+        if create_revision and content_changed:
+            conn.execute(
+                """
+                INSERT INTO t_knowledge_file_revision(
+                  revision_id, knowledge_id, filename, title, content, size, content_hash, timestamp
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (str(uuid.uuid4()), knowledge_id, filename, title, content, size, content_hash, effective_timestamp),
+            )
+
+    return {
+        "knowledgeId": knowledge_id,
+        "filename": filename,
+        "title": title,
+        "filePath": file_path,
+        "size": size,
+        "contentHash": content_hash,
+        "preview": preview,
+        "createdAt": created_at,
+        "updatedAt": updated_at,
+    }
+
+
+def list_knowledge_files() -> List[Dict[str, Any]]:
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT knowledge_id, filename, title, file_path, size, content_hash, preview, created_at, updated_at
+            FROM t_knowledge_file
+            ORDER BY updated_at DESC, filename ASC
+            """
+        ).fetchall()
+    return [
+        {
+            "knowledgeId": row["knowledge_id"],
+            "filename": row["filename"],
+            "title": row["title"],
+            "filePath": row["file_path"],
+            "size": row["size"],
+            "contentHash": row["content_hash"],
+            "preview": row["preview"],
+            "createdAt": row["created_at"],
+            "updatedAt": row["updated_at"],
+        }
+        for row in rows
+    ]
+
+
+def list_knowledge_revisions(filename: Optional[str] = None, page: int = 1, page_size: int = 20) -> List[Dict[str, Any]]:
+    offset = (page - 1) * page_size
+    params: List[Any] = []
+    where = ""
+    if filename:
+        where = "WHERE filename = ?"
+        params.append(filename)
+    params.extend([page_size, offset])
+    with connect() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT revision_id, knowledge_id, filename, title, content, size, content_hash, timestamp
+            FROM t_knowledge_file_revision
+            {where}
+            ORDER BY timestamp DESC, rowid DESC
+            LIMIT ? OFFSET ?
+            """,
+            params,
+        ).fetchall()
+    return [
+        {
+            "revisionId": row["revision_id"],
+            "knowledgeId": row["knowledge_id"],
+            "filename": row["filename"],
+            "title": row["title"],
+            "content": row["content"],
+            "size": row["size"],
+            "contentHash": row["content_hash"],
+            "timestamp": row["timestamp"],
+        }
+        for row in rows
+    ]

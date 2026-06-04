@@ -4,3 +4,6 @@ __pycache__/
 data/
 tests/test_agent.db
 *.pyc
+skills/local_markdown_knowledge/indexes/
+skills/local_markdown_knowledge/knowledge/*.md
+!skills/local_markdown_knowledge/knowledge/.gitkeep

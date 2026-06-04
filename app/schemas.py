@@ -56,6 +56,27 @@ class ChatListRequest(BaseModel):
     pageSize: int = Field(default=10, ge=1, le=100)
 
 
+class KnowledgeSaveRequest(BaseModel):
+    title: str = Field(min_length=1)
+    content: str = Field(min_length=1)
+    filename: Optional[str] = None
+
+
+class KnowledgeSearchRequest(BaseModel):
+    query: str = Field(min_length=1)
+    topK: int = Field(default=5, ge=1, le=10)
+
+
+class KnowledgeRevisionListRequest(BaseModel):
+    filename: Optional[str] = None
+    page: int = Field(default=1, ge=1)
+    pageSize: int = Field(default=20, ge=1, le=100)
+
+
+class KnowledgeDetailRequest(BaseModel):
+    filename: str = Field(min_length=1)
+
+
 def api_response(data: Any = None, code: int = 0, des: str = "success", meta_uuid: Optional[str] = None) -> Dict[str, Any]:
     import uuid
 

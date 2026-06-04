@@ -8,7 +8,11 @@
 - `POST /agent/v1/assistant/feedback`：对 Agent 回复点赞、点踩或置为 `NONE`，点踩可提交原因。
 - `POST /agent/v1/assistant/conversation/list`：查询用户历史会话列表。
 - `POST /agent/v1/assistant/chat/list`：查询某个会话下的全部对话记录。
+- `POST /agent/v1/knowledge/save`：保存本地 Markdown 知识，并自动重建检索索引。
+- `POST /agent/v1/knowledge/list`：查询本地知识文件列表。
+- `POST /agent/v1/knowledge/search`：检索本地 Markdown 知识片段。
 - `GET /`：Web 聊天工作台，支持流式显示、历史会话和反馈。
+- `GET /knowledge`：本地 Markdown 知识库管理页面。
 
 ## 技术栈
 
@@ -33,9 +37,55 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 启动后访问：
 
 - Web 页面：http://127.0.0.1:8000
+- 知识库管理：http://127.0.0.1:8000/knowledge
 - API 文档：http://127.0.0.1:8000/docs
 
 首次启动会自动创建 `data/agent.db`。
+
+## 本地 Markdown 知识库
+
+本项目包含 `local_markdown_knowledge` skill：
+
+```text
+skills/local_markdown_knowledge/
+  SKILL.md
+  knowledge/
+  scripts/
+  indexes/
+```
+
+在 `/knowledge` 页面保存知识后，内容会写入：
+
+```text
+skills/local_markdown_knowledge/knowledge/
+```
+
+并自动重建检索索引：
+
+```text
+skills/local_markdown_knowledge/indexes/
+```
+
+为了避免上传本地知识内容和索引，`.gitignore` 已忽略：
+
+```text
+skills/local_markdown_knowledge/knowledge/*.md
+skills/local_markdown_knowledge/indexes/
+```
+
+当用户问题显式包含“知识库 / 文档 / 手册 / 内部”等关键词，或检索分数足够高时，聊天接口会优先基于本地 Markdown 检索结果回答，并附来源文件与标题。
+
+知识库历史数据会记录到 SQLite：
+
+- `t_knowledge_file`：当前 Markdown 文件元信息，包括文件名、标题、路径、大小、内容 hash、预览、创建时间、更新时间。
+- `t_knowledge_file_revision`：通过页面保存/更新知识时生成的历史版本，包括 revision id、知识文件 id、标题、完整内容、大小、内容 hash、保存时间。
+
+可用下面命令查询：
+
+```bash
+sqlite3 data/agent.db "SELECT filename,title,size,updated_at FROM t_knowledge_file ORDER BY updated_at DESC;"
+sqlite3 data/agent.db "SELECT filename,title,size,timestamp FROM t_knowledge_file_revision ORDER BY timestamp DESC;"
+```
 
 ## 接口调试示例
 

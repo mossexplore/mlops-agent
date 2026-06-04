@@ -13,7 +13,26 @@ from fastapi.staticfiles import StaticFiles
 
 from .agent import build_answer, stream_chunks
 from .database import add_chat, init_db, list_chats, list_conversations, save_feedback, upsert_conversation
-from .schemas import ChatListRequest, ChatRequest, ConversationListRequest, FeedbackRequest, api_response
+from .knowledge import (
+    build_grounded_answer,
+    get_markdown_knowledge_detail,
+    list_markdown_knowledge,
+    list_markdown_knowledge_revisions,
+    retrieve_knowledge,
+    should_use_local_knowledge,
+    write_markdown_knowledge,
+)
+from .schemas import (
+    ChatListRequest,
+    ChatRequest,
+    ConversationListRequest,
+    FeedbackRequest,
+    KnowledgeDetailRequest,
+    KnowledgeRevisionListRequest,
+    KnowledgeSaveRequest,
+    KnowledgeSearchRequest,
+    api_response,
+)
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -46,13 +65,22 @@ def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
 
 
+@app.get("/knowledge")
+def knowledge_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "knowledge.html")
+
+
 @app.post("/agent/v1/assistant/chat")
 async def chat(request: ChatRequest) -> StreamingResponse:
     context = request.context
     query_message_id = str(uuid.uuid4())
     answer_message_id = str(uuid.uuid4())
     query_send_time = int(time.time() * 1000)
-    answer = build_answer(request.query, request.needDeepThinking)
+    knowledge_results = retrieve_knowledge(request.query, top_k=5)
+    if should_use_local_knowledge(request.query, knowledge_results):
+        answer = build_grounded_answer(request.query, knowledge_results)
+    else:
+        answer = build_answer(request.query, request.needDeepThinking)
 
     upsert_conversation(
         user_id=context.userId,
@@ -106,3 +134,32 @@ def conversation_list(request: ConversationListRequest):
 def chat_list(request: ChatListRequest):
     data = list_chats(request.userId, request.conversationId, request.page, request.pageSize)
     return api_response(data=data, meta_uuid=request.conversationId)
+
+
+@app.post("/agent/v1/knowledge/save")
+def knowledge_save(request: KnowledgeSaveRequest):
+    data = write_markdown_knowledge(request.title, request.content, request.filename)
+    return api_response(data=data)
+
+
+@app.post("/agent/v1/knowledge/list")
+def knowledge_list():
+    return api_response(data=list_markdown_knowledge())
+
+
+@app.post("/agent/v1/knowledge/detail")
+def knowledge_detail(request: KnowledgeDetailRequest):
+    try:
+        return api_response(data=get_markdown_knowledge_detail(request.filename))
+    except FileNotFoundError as exc:
+        return api_response(data=None, code=404, des=str(exc))
+
+
+@app.post("/agent/v1/knowledge/search")
+def knowledge_search(request: KnowledgeSearchRequest):
+    return api_response(data=retrieve_knowledge(request.query, request.topK))
+
+
+@app.post("/agent/v1/knowledge/revision/list")
+def knowledge_revision_list(request: KnowledgeRevisionListRequest):
+    return api_response(data=list_markdown_knowledge_revisions(request.filename, request.page, request.pageSize))

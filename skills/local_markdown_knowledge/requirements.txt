@@ -1,0 +1,8 @@
+# The current project uses a lightweight lexical retriever by default.
+# These optional packages can replace it with vector retrieval later.
+langchain-core>=0.3.0
+langgraph>=0.2.0
+sentence-transformers>=2.7.0
+faiss-cpu>=1.8.0
+markdown-it-py>=3.0.0
+numpy>=1.26.0

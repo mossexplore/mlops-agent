@@ -63,7 +63,7 @@ button {
 
 .sidebar {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   gap: 18px;
   min-height: 0;
   overflow: hidden;
@@ -102,6 +102,31 @@ button {
   margin: 3px 0 0;
   color: #9ca3af;
   font-size: 12px;
+}
+
+.nav-links {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.nav-links a {
+  display: grid;
+  place-items: center;
+  min-height: 36px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #9ca3af;
+  text-decoration: none;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 13px;
+}
+
+.nav-links a:hover,
+.nav-links a.active {
+  border-color: rgba(129, 140, 248, 0.36);
+  color: #ffffff;
+  background: rgba(129, 140, 248, 0.14);
 }
 
 .context-panel,

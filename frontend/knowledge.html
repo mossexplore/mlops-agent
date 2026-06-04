@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Wise MLOps Knowledge</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/knowledge.css" />
+  </head>
+  <body>
+    <div class="app-background" aria-hidden="true"></div>
+    <main class="knowledge-shell">
+      <aside class="knowledge-side">
+        <header class="brand">
+          <div class="brand-mark">W</div>
+          <div>
+            <h1>Wise MLOps Agent</h1>
+            <p>Local Markdown Knowledge</p>
+          </div>
+        </header>
+        <nav class="nav-links">
+          <a href="/">诊断会话</a>
+          <a href="/knowledge" class="active">知识库</a>
+        </nav>
+        <section class="knowledge-list-panel">
+          <div class="panel-title">
+            <span>Markdown 文件</span>
+            <button id="refreshKnowledge" class="ghost-button" type="button">刷新</button>
+          </div>
+          <div id="knowledgeList" class="knowledge-list"></div>
+        </section>
+      </aside>
+
+      <section class="knowledge-workspace">
+        <header class="knowledge-hero">
+          <div>
+            <p>Skill: local_markdown_knowledge</p>
+            <h2>本地 Markdown 知识库管理</h2>
+          </div>
+          <div class="status-strip">
+            <span>Markdown</span>
+            <span>Retriever</span>
+            <span>Skill</span>
+          </div>
+        </header>
+
+        <section class="knowledge-grid">
+          <form id="knowledgeForm" class="knowledge-editor">
+            <div class="editor-head">
+              <div>
+                <p>新增 / 更新知识</p>
+                <h3>写入 Markdown 并自动重建索引</h3>
+              </div>
+              <button id="saveKnowledge" type="submit">保存知识</button>
+            </div>
+            <label>
+              标题
+              <input id="knowledgeTitle" placeholder="例如：登录失败排查" required />
+            </label>
+            <label>
+              文件名
+              <input id="knowledgeFilename" placeholder="例如：login-troubleshooting.md，可留空" />
+            </label>
+            <label class="content-field">
+              Markdown 内容
+              <textarea id="knowledgeContent" placeholder="# 登录问题&#10;&#10;## 登录失败排查&#10;1. 检查账号状态..." required></textarea>
+            </label>
+          </form>
+
+          <section class="knowledge-search-panel">
+            <div class="editor-head">
+              <div>
+                <p>检索测试</p>
+                <h3>验证聊天接口会命中的知识片段</h3>
+              </div>
+            </div>
+            <form id="knowledgeSearchForm" class="knowledge-search">
+              <input id="knowledgeQuery" placeholder="输入问题，例如：登录失败怎么处理" />
+              <button type="submit">检索</button>
+            </form>
+            <div id="knowledgeResults" class="knowledge-results"></div>
+          </section>
+        </section>
+      </section>
+    </main>
+    <script src="/static/knowledge.js"></script>
+  </body>
+</html>
