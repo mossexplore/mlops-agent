@@ -132,3 +132,9 @@ curl -X POST http://127.0.0.1:8000/agent/v1/assistant/feedback \
 ```bash
 pytest
 ```
+
+## 版权与许可
+
+Copyright (c) 2026 Wise MLOps Agent contributors.
+
+本项目使用 MIT License 开源许可，详情见 [LICENSE](./LICENSE)。
