@@ -14,6 +14,13 @@
 - `POST /agent/v1/assistant/chat/list`：查询某个会话下的全部对话记录。
 - `POST /agent/v1/assistant/trace/detail`：查询一次 Agent 回复的 trace 和 span 明细。
 - `POST /agent/v1/assistant/diagnostic/state`：查询某个会话的多轮诊断状态。
+- `POST /agent/v1/quality/dashboard`：查询质量闭环工作台聚合数据。
+- `POST /agent/v1/quality/feedback/list`：查询点踩反馈与人工标注队列。
+- `POST /agent/v1/quality/feedback/annotate`：标注点踩原因，支持知识缺失、检索错误、回答泛泛、步骤不可执行、误判场景。
+- `POST /agent/v1/quality/eval-case/save`：新增或更新固定评测用例。
+- `POST /agent/v1/quality/eval-case/from-feedback`：将典型点踩反馈沉淀为评测用例。
+- `POST /agent/v1/quality/eval/run`：运行固定评测集，产出通过率、平均分和知识命中率。
+- `POST /agent/v1/quality/experiment/save`：保存 A/B 实验配置。
 - `POST /agent/v1/knowledge/save`：保存本地 Markdown 知识，并自动重建检索索引。
 - `POST /agent/v1/knowledge/list`：查询本地知识文件列表。
 - `POST /agent/v1/knowledge/search`：检索本地 Markdown 知识片段。
@@ -24,6 +31,7 @@
 - `GET /`：Web 聊天工作台，支持流式显示、历史会话和反馈。
 - `GET /knowledge`：本地 Markdown 知识库管理页面。
 - `GET /ops`：运营看板页面，支持按日期、用户、来源和场景筛选。
+- `GET /quality`：质量评估与反馈闭环工作台。
 
 ## 技术栈
 
@@ -50,6 +58,7 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 - Web 页面：http://127.0.0.1:8000
 - 知识库管理：http://127.0.0.1:8000/knowledge
 - 运营看板：http://127.0.0.1:8000/ops
+- 质量闭环：http://127.0.0.1:8000/quality
 - API 文档：http://127.0.0.1:8000/docs
 
 首次启动会自动创建 `data/agent.db`。
@@ -182,6 +191,37 @@ sqlite3 data/agent.db "SELECT channel,query,filename,score,timestamp FROM t_know
 sqlite3 data/agent.db "SELECT trace_id,query,status,total_ms,created_at FROM t_agent_trace ORDER BY created_at DESC LIMIT 10;"
 sqlite3 data/agent.db "SELECT name,kind,status,duration_ms FROM t_agent_span WHERE trace_id='替换为traceId' ORDER BY started_at;"
 sqlite3 data/agent.db "SELECT user_id,conversation_id,current_step,risk_level,updated_at FROM t_diagnostic_state ORDER BY updated_at DESC LIMIT 10;"
+```
+
+## 质量评估与反馈闭环
+
+质量系统参考业界常见做法：
+
+- LangSmith：把线上反馈沉淀到 annotation queue，并把典型问题加入 dataset 做回归实验。
+- OpenAI Evals：用固定测试集、grader 和 run 对 prompt、模型、检索策略改动做可重复评测。
+- RAG 评估实践：关注知识命中率、答案相关性、可执行性、风险边界和禁止内容。
+
+本项目先落地一套本地 SQLite 质量闭环：
+
+- 反馈工作台：管理员查看点踩记录，标注为 `knowledge_missing`、`retrieval_error`、`generic_answer`、`unactionable_steps`、`scene_misclassification`。
+- 测试集沉淀：把典型问题保存为评测用例，包括输入问题、期望答案、必须包含步骤、禁止出现内容和标签。
+- 自动评测：运行固定测试集，使用规则 grader 计算必须步骤命中、可执行动作、风险提示、知识命中和禁止内容违规。后续可替换为 LLM-as-judge。
+- 回答质量指标：知识命中率、回答满意率、点踩率、无答案率、重复提问率、平均响应耗时。
+- A/B 实验：记录不同 prompt、检索阈值、模型或策略的 variants、流量比例和主指标，用于后续在线对比。
+
+相关表：
+
+- `t_feedback_review`：点踩反馈人工标注与处理状态。
+- `t_eval_case`：固定评测集。
+- `t_eval_run` / `t_eval_result`：自动评测运行和单条结果。
+- `t_ab_experiment`：A/B 实验配置。
+
+可用下面命令查询：
+
+```bash
+sqlite3 data/agent.db "SELECT quality_reason,status,COUNT(*) FROM t_feedback_review GROUP BY quality_reason,status;"
+sqlite3 data/agent.db "SELECT title,query,status,updated_at FROM t_eval_case ORDER BY updated_at DESC;"
+sqlite3 data/agent.db "SELECT name,variant,case_count,pass_count,avg_score,knowledge_hit_rate,created_at FROM t_eval_run ORDER BY created_at DESC;"
 ```
 
 ## 接口调试示例

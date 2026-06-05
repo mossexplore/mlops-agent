@@ -29,11 +29,15 @@ from .database import (
     get_agent_trace,
     get_diagnostic_state,
     init_db,
+    list_ab_experiments,
     list_chats,
     list_conversations,
+    list_eval_cases,
+    list_eval_runs,
     record_knowledge_hits,
     save_agent_trace,
     save_feedback,
+    upsert_eval_case,
     upsert_conversation,
     upsert_diagnostic_state,
 )
@@ -48,10 +52,25 @@ from .knowledge import (
     should_use_local_knowledge,
     write_markdown_knowledge,
 )
+from .quality import (
+    annotate_feedback,
+    create_eval_case_from_feedback,
+    create_or_update_experiment,
+    get_quality_dashboard,
+    get_quality_metrics,
+    list_feedback_workspace,
+    run_eval_suite,
+)
 from .schemas import (
     ChatListRequest,
     ChatRequest,
     ConversationListRequest,
+    EvalCaseFromFeedbackRequest,
+    EvalCaseListRequest,
+    EvalCaseSaveRequest,
+    EvalRunListRequest,
+    EvalRunRequest,
+    ExperimentSaveRequest,
     FeedbackRequest,
     TraceDetailRequest,
     DiagnosticStateRequest,
@@ -63,6 +82,8 @@ from .schemas import (
     KnowledgeStatusRequest,
     LoginRequest,
     OpsDashboardRequest,
+    QualityFeedbackAnnotateRequest,
+    QualityFeedbackListRequest,
     api_response,
 )
 
@@ -114,6 +135,14 @@ def ops_page(request: Request) -> FileResponse:
     if redirect:
         return redirect
     return FileResponse(STATIC_DIR / "ops.html")
+
+
+@app.get("/quality")
+def quality_page(request: Request) -> FileResponse:
+    redirect = require_page_session(request)
+    if redirect:
+        return redirect
+    return FileResponse(STATIC_DIR / "quality.html")
 
 
 @app.get("/login")
@@ -325,3 +354,114 @@ def ops_dashboard(request: OpsDashboardRequest, _user=Depends(require_admin)):
             scene=request.scene,
         )
     )
+
+
+@app.post("/agent/v1/quality/dashboard")
+def quality_dashboard(_user=Depends(require_admin)):
+    return api_response(data=get_quality_dashboard())
+
+
+@app.post("/agent/v1/quality/metrics")
+def quality_metrics(_user=Depends(require_admin)):
+    return api_response(data=get_quality_metrics())
+
+
+@app.post("/agent/v1/quality/feedback/list")
+def quality_feedback_list(request: QualityFeedbackListRequest, _user=Depends(require_admin)):
+    return api_response(data=list_feedback_workspace(request.status, request.page, request.pageSize))
+
+
+@app.post("/agent/v1/quality/feedback/annotate")
+def quality_feedback_annotate(request: QualityFeedbackAnnotateRequest, _user=Depends(require_admin)):
+    try:
+        data = annotate_feedback(
+            answer_message_id=request.answerMessageId,
+            user_id=request.userId,
+            conversation_id=request.conversationId,
+            quality_reason=request.qualityReason,
+            status=request.status,
+            annotation=request.annotation,
+            reviewer=request.reviewer,
+        )
+        return api_response(data=data)
+    except ValueError as exc:
+        return api_response(data=None, code=400, des=str(exc))
+
+
+@app.post("/agent/v1/quality/eval-case/save")
+def quality_eval_case_save(request: EvalCaseSaveRequest, _user=Depends(require_admin)):
+    return api_response(
+        data=upsert_eval_case(
+            case_id=request.caseId,
+            title=request.title,
+            query=request.query,
+            expected_answer=request.expectedAnswer,
+            required_steps=request.requiredSteps,
+            forbidden_content=request.forbiddenContent,
+            tags=request.tags,
+            status=request.status,
+        )
+    )
+
+
+@app.post("/agent/v1/quality/eval-case/from-feedback")
+def quality_eval_case_from_feedback(request: EvalCaseFromFeedbackRequest, _user=Depends(require_admin)):
+    try:
+        return api_response(
+            data=create_eval_case_from_feedback(
+                answer_message_id=request.answerMessageId,
+                user_id=request.userId,
+                conversation_id=request.conversationId,
+                title=request.title,
+                expected_answer=request.expectedAnswer,
+                required_steps=request.requiredSteps or None,
+                forbidden_content=request.forbiddenContent or None,
+                tags=request.tags or None,
+            )
+        )
+    except ValueError as exc:
+        return api_response(data=None, code=404, des=str(exc))
+
+
+@app.post("/agent/v1/quality/eval-case/list")
+def quality_eval_case_list(request: EvalCaseListRequest, _user=Depends(require_admin)):
+    return api_response(data=list_eval_cases(request.status, request.page, request.pageSize))
+
+
+@app.post("/agent/v1/quality/eval/run")
+def quality_eval_run(request: EvalRunRequest, _user=Depends(require_admin)):
+    return api_response(
+        data=run_eval_suite(
+            name=request.name,
+            variant=request.variant,
+            prompt_version=request.promptVersion,
+            retrieval_threshold=request.retrievalThreshold,
+            model=request.model,
+            case_ids=request.caseIds or None,
+        )
+    )
+
+
+@app.post("/agent/v1/quality/eval/run/list")
+def quality_eval_run_list(request: EvalRunListRequest, _user=Depends(require_admin)):
+    return api_response(data=list_eval_runs(request.page, request.pageSize))
+
+
+@app.post("/agent/v1/quality/experiment/save")
+def quality_experiment_save(request: ExperimentSaveRequest, _user=Depends(require_admin)):
+    return api_response(
+        data=create_or_update_experiment(
+            experiment_id=request.experimentId,
+            name=request.name,
+            variants=request.variants,
+            traffic_split=request.trafficSplit,
+            primary_metric=request.primaryMetric,
+            status=request.status,
+            notes=request.notes,
+        )
+    )
+
+
+@app.post("/agent/v1/quality/experiment/list")
+def quality_experiment_list(_user=Depends(require_admin)):
+    return api_response(data=list_ab_experiments())

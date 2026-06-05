@@ -111,6 +111,74 @@ class OpsDashboardRequest(BaseModel):
     scene: Optional[str] = None
 
 
+class QualityFeedbackListRequest(BaseModel):
+    status: Optional[str] = None
+    page: int = Field(default=1, ge=1)
+    pageSize: int = Field(default=20, ge=1, le=100)
+
+
+class QualityFeedbackAnnotateRequest(BaseModel):
+    answerMessageId: str = Field(min_length=1)
+    userId: str = Field(min_length=1)
+    conversationId: str = Field(min_length=1)
+    qualityReason: str = Field(min_length=1)
+    status: str = "open"
+    annotation: Optional[str] = None
+    reviewer: Optional[str] = None
+
+
+class EvalCaseSaveRequest(BaseModel):
+    caseId: Optional[str] = None
+    title: str = Field(min_length=1)
+    query: str = Field(min_length=1)
+    expectedAnswer: Optional[str] = None
+    requiredSteps: List[str] = Field(default_factory=list)
+    forbiddenContent: List[str] = Field(default_factory=list)
+    tags: List[str] = Field(default_factory=list)
+    status: str = "active"
+
+
+class EvalCaseFromFeedbackRequest(BaseModel):
+    answerMessageId: str = Field(min_length=1)
+    userId: str = Field(min_length=1)
+    conversationId: str = Field(min_length=1)
+    title: Optional[str] = None
+    expectedAnswer: Optional[str] = None
+    requiredSteps: List[str] = Field(default_factory=list)
+    forbiddenContent: List[str] = Field(default_factory=list)
+    tags: List[str] = Field(default_factory=list)
+
+
+class EvalCaseListRequest(BaseModel):
+    status: Optional[str] = "active"
+    page: int = Field(default=1, ge=1)
+    pageSize: int = Field(default=50, ge=1, le=200)
+
+
+class EvalRunRequest(BaseModel):
+    name: str = Field(default="baseline quality run", min_length=1)
+    variant: str = "baseline"
+    promptVersion: Optional[str] = None
+    retrievalThreshold: Optional[float] = None
+    model: Optional[str] = None
+    caseIds: List[str] = Field(default_factory=list)
+
+
+class EvalRunListRequest(BaseModel):
+    page: int = Field(default=1, ge=1)
+    pageSize: int = Field(default=20, ge=1, le=100)
+
+
+class ExperimentSaveRequest(BaseModel):
+    experimentId: Optional[str] = None
+    name: str = Field(min_length=1)
+    status: str = "draft"
+    variants: List[str] = Field(default_factory=list)
+    trafficSplit: Dict[str, float] = Field(default_factory=dict)
+    primaryMetric: str = "satisfactionRate"
+    notes: Optional[str] = None
+
+
 class LoginRequest(BaseModel):
     username: str = Field(min_length=1)
     password: str = Field(min_length=1)

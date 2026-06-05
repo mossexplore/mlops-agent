@@ -23,6 +23,15 @@ def default_start_date_text(days: int = 6) -> str:
     return (date.today() - timedelta(days=days)).isoformat()
 
 
+def safe_json_loads(value: Optional[str], default: Any) -> Any:
+    if value is None or value == "":
+        return default
+    try:
+        return json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        return default
+
+
 @contextmanager
 def connect(db_path: Optional[Path] = None) -> Iterable[sqlite3.Connection]:
     path = db_path or DB_PATH
@@ -175,6 +184,77 @@ def init_db(db_path: Optional[Path] = None) -> None:
               risk_level TEXT NOT NULL DEFAULT 'low',
               updated_at TEXT,
               PRIMARY KEY (user_id, conversation_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS t_feedback_review (
+              answer_message_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              conversation_id TEXT NOT NULL,
+              quality_reason TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'open',
+              annotation TEXT,
+              reviewer TEXT,
+              eval_case_id TEXT,
+              updated_at TEXT,
+              PRIMARY KEY (answer_message_id, user_id, conversation_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS t_eval_case (
+              case_id TEXT NOT NULL,
+              title TEXT NOT NULL,
+              query TEXT NOT NULL,
+              expected_answer TEXT,
+              required_steps TEXT NOT NULL DEFAULT '[]',
+              forbidden_content TEXT NOT NULL DEFAULT '[]',
+              tags TEXT NOT NULL DEFAULT '[]',
+              source_feedback_id TEXT,
+              status TEXT NOT NULL DEFAULT 'active',
+              created_at TEXT,
+              updated_at TEXT,
+              PRIMARY KEY (case_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS t_eval_run (
+              run_id TEXT NOT NULL,
+              name TEXT NOT NULL,
+              variant TEXT NOT NULL,
+              prompt_version TEXT,
+              retrieval_threshold REAL,
+              model TEXT,
+              case_count INTEGER NOT NULL DEFAULT 0,
+              pass_count INTEGER NOT NULL DEFAULT 0,
+              avg_score REAL NOT NULL DEFAULT 0,
+              knowledge_hit_rate REAL NOT NULL DEFAULT 0,
+              created_at TEXT,
+              PRIMARY KEY (run_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS t_eval_result (
+              result_id TEXT NOT NULL,
+              run_id TEXT NOT NULL,
+              case_id TEXT NOT NULL,
+              answer TEXT,
+              score REAL NOT NULL DEFAULT 0,
+              passed INTEGER NOT NULL DEFAULT 0,
+              checks TEXT NOT NULL DEFAULT '{}',
+              knowledge_hit INTEGER NOT NULL DEFAULT 0,
+              error TEXT,
+              total_ms INTEGER NOT NULL DEFAULT 0,
+              created_at TEXT,
+              PRIMARY KEY (result_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS t_ab_experiment (
+              experiment_id TEXT NOT NULL,
+              name TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'draft',
+              variants TEXT NOT NULL DEFAULT '[]',
+              traffic_split TEXT NOT NULL DEFAULT '{}',
+              primary_metric TEXT NOT NULL DEFAULT 'satisfactionRate',
+              notes TEXT,
+              created_at TEXT,
+              updated_at TEXT,
+              PRIMARY KEY (experiment_id)
             );
             """
         )
@@ -974,6 +1054,452 @@ def list_knowledge_gaps(page: int = 1, page_size: int = 20) -> List[Dict[str, An
     return result
 
 
+def list_feedback_reviews(status: Optional[str] = None, page: int = 1, page_size: int = 20) -> List[Dict[str, Any]]:
+    offset = (page - 1) * page_size
+    params: List[Any] = []
+    status_filter = ""
+    if status:
+        status_filter = "AND COALESCE(review.status, 'open') = ?"
+        params.append(status)
+    params.extend([page_size, offset])
+    with connect() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT
+              feedback.answer_message_id,
+              feedback.user_id,
+              feedback.conversation_id,
+              feedback.query_message_id,
+              feedback.reason,
+              feedback.timestamp,
+              query.content AS query_content,
+              answer.content AS answer_content,
+              review.quality_reason,
+              review.status AS review_status,
+              review.annotation,
+              review.reviewer,
+              review.eval_case_id,
+              review.updated_at AS review_updated_at
+            FROM t_chat_feedback AS feedback
+            LEFT JOIN t_chat_memory AS query
+              ON query.memory_id = feedback.query_message_id
+             AND query.user_id = feedback.user_id
+             AND query.conversation_id = feedback.conversation_id
+            LEFT JOIN t_chat_memory AS answer
+              ON answer.memory_id = feedback.answer_message_id
+             AND answer.user_id = feedback.user_id
+             AND answer.conversation_id = feedback.conversation_id
+            LEFT JOIN t_feedback_review AS review
+              ON review.answer_message_id = feedback.answer_message_id
+             AND review.user_id = feedback.user_id
+             AND review.conversation_id = feedback.conversation_id
+            WHERE feedback.feedback = 'unlike'
+              {status_filter}
+            ORDER BY feedback.timestamp DESC
+            LIMIT ? OFFSET ?
+            """,
+            params,
+        ).fetchall()
+    return [
+        {
+            "answerMessageId": row["answer_message_id"],
+            "queryMessageId": row["query_message_id"],
+            "userId": row["user_id"],
+            "conversationId": row["conversation_id"],
+            "query": row["query_content"] or "",
+            "answer": row["answer_content"] or "",
+            "feedbackReason": safe_json_loads(row["reason"], {}),
+            "qualityReason": row["quality_reason"] or "未标注",
+            "status": row["review_status"] or "open",
+            "annotation": row["annotation"],
+            "reviewer": row["reviewer"],
+            "evalCaseId": row["eval_case_id"],
+            "timestamp": row["timestamp"],
+            "reviewUpdatedAt": row["review_updated_at"],
+        }
+        for row in rows
+    ]
+
+
+def annotate_feedback_review(
+    answer_message_id: str,
+    user_id: str,
+    conversation_id: str,
+    quality_reason: str,
+    status: str = "open",
+    annotation: Optional[str] = None,
+    reviewer: Optional[str] = None,
+    eval_case_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    timestamp = now_text()
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO t_feedback_review(
+              answer_message_id, user_id, conversation_id, quality_reason, status,
+              annotation, reviewer, eval_case_id, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(answer_message_id, user_id, conversation_id)
+            DO UPDATE SET
+              quality_reason = excluded.quality_reason,
+              status = excluded.status,
+              annotation = excluded.annotation,
+              reviewer = excluded.reviewer,
+              eval_case_id = COALESCE(excluded.eval_case_id, t_feedback_review.eval_case_id),
+              updated_at = excluded.updated_at
+            """,
+            (
+                answer_message_id,
+                user_id,
+                conversation_id,
+                quality_reason,
+                status,
+                annotation,
+                reviewer,
+                eval_case_id,
+                timestamp,
+            ),
+        )
+    rows = list_feedback_reviews(page=1, page_size=200)
+    return next(
+        item
+        for item in rows
+        if item["answerMessageId"] == answer_message_id
+        and item["userId"] == user_id
+        and item["conversationId"] == conversation_id
+    )
+
+
+def upsert_eval_case(
+    title: str,
+    query: str,
+    expected_answer: Optional[str] = None,
+    required_steps: Optional[List[str]] = None,
+    forbidden_content: Optional[List[str]] = None,
+    tags: Optional[List[str]] = None,
+    case_id: Optional[str] = None,
+    source_feedback_id: Optional[str] = None,
+    status: str = "active",
+) -> Dict[str, Any]:
+    timestamp = now_text()
+    effective_case_id = case_id or str(uuid.uuid4())
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO t_eval_case(
+              case_id, title, query, expected_answer, required_steps, forbidden_content,
+              tags, source_feedback_id, status, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(case_id)
+            DO UPDATE SET
+              title = excluded.title,
+              query = excluded.query,
+              expected_answer = excluded.expected_answer,
+              required_steps = excluded.required_steps,
+              forbidden_content = excluded.forbidden_content,
+              tags = excluded.tags,
+              source_feedback_id = excluded.source_feedback_id,
+              status = excluded.status,
+              updated_at = excluded.updated_at
+            """,
+            (
+                effective_case_id,
+                title,
+                query,
+                expected_answer,
+                json.dumps(required_steps or [], ensure_ascii=False),
+                json.dumps(forbidden_content or [], ensure_ascii=False),
+                json.dumps(tags or [], ensure_ascii=False),
+                source_feedback_id,
+                status,
+                timestamp,
+                timestamp,
+            ),
+        )
+    return get_eval_case(effective_case_id) or {}
+
+
+def get_eval_case(case_id: str) -> Optional[Dict[str, Any]]:
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT case_id, title, query, expected_answer, required_steps, forbidden_content,
+                   tags, source_feedback_id, status, created_at, updated_at
+            FROM t_eval_case
+            WHERE case_id = ?
+            """,
+            (case_id,),
+        ).fetchone()
+    if not row:
+        return None
+    return {
+        "caseId": row["case_id"],
+        "title": row["title"],
+        "query": row["query"],
+        "expectedAnswer": row["expected_answer"],
+        "requiredSteps": json.loads(row["required_steps"] or "[]"),
+        "forbiddenContent": json.loads(row["forbidden_content"] or "[]"),
+        "tags": json.loads(row["tags"] or "[]"),
+        "sourceFeedbackId": row["source_feedback_id"],
+        "status": row["status"],
+        "createdAt": row["created_at"],
+        "updatedAt": row["updated_at"],
+    }
+
+
+def list_eval_cases(status: Optional[str] = "active", page: int = 1, page_size: int = 50) -> List[Dict[str, Any]]:
+    offset = (page - 1) * page_size
+    params: List[Any] = []
+    where = ""
+    if status:
+        where = "WHERE status = ?"
+        params.append(status)
+    params.extend([page_size, offset])
+    with connect() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT case_id, title, query, expected_answer, required_steps, forbidden_content,
+                   tags, source_feedback_id, status, created_at, updated_at
+            FROM t_eval_case
+            {where}
+            ORDER BY updated_at DESC, created_at DESC
+            LIMIT ? OFFSET ?
+            """,
+            params,
+        ).fetchall()
+    return [
+        {
+            "caseId": row["case_id"],
+            "title": row["title"],
+            "query": row["query"],
+            "expectedAnswer": row["expected_answer"],
+            "requiredSteps": json.loads(row["required_steps"] or "[]"),
+            "forbiddenContent": json.loads(row["forbidden_content"] or "[]"),
+            "tags": json.loads(row["tags"] or "[]"),
+            "sourceFeedbackId": row["source_feedback_id"],
+            "status": row["status"],
+            "createdAt": row["created_at"],
+            "updatedAt": row["updated_at"],
+        }
+        for row in rows
+    ]
+
+
+def save_eval_run(run: Dict[str, Any], results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    timestamp = now_text()
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO t_eval_run(
+              run_id, name, variant, prompt_version, retrieval_threshold, model,
+              case_count, pass_count, avg_score, knowledge_hit_rate, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                run["runId"],
+                run["name"],
+                run["variant"],
+                run.get("promptVersion"),
+                run.get("retrievalThreshold"),
+                run.get("model"),
+                run["caseCount"],
+                run["passCount"],
+                run["avgScore"],
+                run["knowledgeHitRate"],
+                timestamp,
+            ),
+        )
+        for result in results:
+            conn.execute(
+                """
+                INSERT INTO t_eval_result(
+                  result_id, run_id, case_id, answer, score, passed, checks,
+                  knowledge_hit, error, total_ms, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(uuid.uuid4()),
+                    run["runId"],
+                    result["caseId"],
+                    result.get("answer"),
+                    result["score"],
+                    1 if result["passed"] else 0,
+                    json.dumps(result["checks"], ensure_ascii=False),
+                    1 if result.get("knowledgeHit") else 0,
+                    result.get("error"),
+                    int(result.get("totalMs") or 0),
+                    timestamp,
+                ),
+            )
+    return get_eval_run(run["runId"]) or {}
+
+
+def get_eval_run(run_id: str) -> Optional[Dict[str, Any]]:
+    with connect() as conn:
+        run = conn.execute(
+            """
+            SELECT run_id, name, variant, prompt_version, retrieval_threshold, model,
+                   case_count, pass_count, avg_score, knowledge_hit_rate, created_at
+            FROM t_eval_run
+            WHERE run_id = ?
+            """,
+            (run_id,),
+        ).fetchone()
+        if not run:
+            return None
+        results = conn.execute(
+            """
+            SELECT result_id, run_id, case_id, answer, score, passed, checks,
+                   knowledge_hit, error, total_ms, created_at
+            FROM t_eval_result
+            WHERE run_id = ?
+            ORDER BY created_at ASC, rowid ASC
+            """,
+            (run_id,),
+        ).fetchall()
+    return {
+        "runId": run["run_id"],
+        "name": run["name"],
+        "variant": run["variant"],
+        "promptVersion": run["prompt_version"],
+        "retrievalThreshold": run["retrieval_threshold"],
+        "model": run["model"],
+        "caseCount": run["case_count"],
+        "passCount": run["pass_count"],
+        "passRate": round(run["pass_count"] / run["case_count"], 4) if run["case_count"] else 0,
+        "avgScore": run["avg_score"],
+        "knowledgeHitRate": run["knowledge_hit_rate"],
+        "createdAt": run["created_at"],
+        "results": [
+            {
+                "resultId": row["result_id"],
+                "runId": row["run_id"],
+                "caseId": row["case_id"],
+                "answer": row["answer"],
+                "score": row["score"],
+                "passed": bool(row["passed"]),
+                "checks": json.loads(row["checks"] or "{}"),
+                "knowledgeHit": bool(row["knowledge_hit"]),
+                "error": row["error"],
+                "totalMs": row["total_ms"],
+                "createdAt": row["created_at"],
+            }
+            for row in results
+        ],
+    }
+
+
+def list_eval_runs(page: int = 1, page_size: int = 20) -> List[Dict[str, Any]]:
+    offset = (page - 1) * page_size
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT run_id, name, variant, prompt_version, retrieval_threshold, model,
+                   case_count, pass_count, avg_score, knowledge_hit_rate, created_at
+            FROM t_eval_run
+            ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
+            """,
+            (page_size, offset),
+        ).fetchall()
+    return [
+        {
+            "runId": row["run_id"],
+            "name": row["name"],
+            "variant": row["variant"],
+            "promptVersion": row["prompt_version"],
+            "retrievalThreshold": row["retrieval_threshold"],
+            "model": row["model"],
+            "caseCount": row["case_count"],
+            "passCount": row["pass_count"],
+            "passRate": round(row["pass_count"] / row["case_count"], 4) if row["case_count"] else 0,
+            "avgScore": row["avg_score"],
+            "knowledgeHitRate": row["knowledge_hit_rate"],
+            "createdAt": row["created_at"],
+        }
+        for row in rows
+    ]
+
+
+def upsert_ab_experiment(
+    name: str,
+    variants: List[str],
+    traffic_split: Dict[str, float],
+    primary_metric: str = "satisfactionRate",
+    status: str = "draft",
+    notes: Optional[str] = None,
+    experiment_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    timestamp = now_text()
+    effective_id = experiment_id or str(uuid.uuid4())
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO t_ab_experiment(
+              experiment_id, name, status, variants, traffic_split, primary_metric, notes, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(experiment_id)
+            DO UPDATE SET
+              name = excluded.name,
+              status = excluded.status,
+              variants = excluded.variants,
+              traffic_split = excluded.traffic_split,
+              primary_metric = excluded.primary_metric,
+              notes = excluded.notes,
+              updated_at = excluded.updated_at
+            """,
+            (
+                effective_id,
+                name,
+                status,
+                json.dumps(variants, ensure_ascii=False),
+                json.dumps(traffic_split, ensure_ascii=False),
+                primary_metric,
+                notes,
+                timestamp,
+                timestamp,
+            ),
+        )
+    return list_ab_experiments(experiment_id=effective_id)[0]
+
+
+def list_ab_experiments(experiment_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    params: List[Any] = []
+    where = ""
+    if experiment_id:
+        where = "WHERE experiment_id = ?"
+        params.append(experiment_id)
+    with connect() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT experiment_id, name, status, variants, traffic_split, primary_metric, notes, created_at, updated_at
+            FROM t_ab_experiment
+            {where}
+            ORDER BY updated_at DESC, created_at DESC
+            """,
+            params,
+        ).fetchall()
+    return [
+        {
+            "experimentId": row["experiment_id"],
+            "name": row["name"],
+            "status": row["status"],
+            "variants": json.loads(row["variants"] or "[]"),
+            "trafficSplit": json.loads(row["traffic_split"] or "{}"),
+            "primaryMetric": row["primary_metric"],
+            "notes": row["notes"],
+            "createdAt": row["created_at"],
+            "updatedAt": row["updated_at"],
+        }
+        for row in rows
+    ]
+
+
 def _date_range(start_date: str, end_date: str) -> List[str]:
     start = datetime.strptime(start_date, "%Y-%m-%d").date()
     end = datetime.strptime(end_date, "%Y-%m-%d").date()
@@ -1039,10 +1565,10 @@ def get_ops_dashboard(
         chat_summary = conn.execute(
             f"""
             SELECT
-              COUNT(DISTINCT CASE WHEN m.type = 'user' THEN m.user_id END) AS active_users,
-              COUNT(DISTINCT CASE WHEN m.type = 'user' THEN m.user_id || ':' || m.conversation_id END) AS conversation_count,
-              SUM(CASE WHEN m.type = 'user' THEN 1 ELSE 0 END) AS question_count,
-              SUM(CASE WHEN m.type = 'assistant' THEN 1 ELSE 0 END) AS assistant_reply_count
+              COUNT(DISTINCT CASE WHEN m.type IN ('user', 'query') THEN m.user_id END) AS active_users,
+              COUNT(DISTINCT CASE WHEN m.type IN ('user', 'query') THEN m.user_id || ':' || m.conversation_id END) AS conversation_count,
+              SUM(CASE WHEN m.type IN ('user', 'query') THEN 1 ELSE 0 END) AS question_count,
+              SUM(CASE WHEN m.type IN ('assistant', 'answer') THEN 1 ELSE 0 END) AS assistant_reply_count
             FROM t_chat_memory AS m
             LEFT JOIN t_conversation_context AS ctx
               ON ctx.user_id = m.user_id AND ctx.conversation_id = m.conversation_id
@@ -1069,10 +1595,10 @@ def get_ops_dashboard(
             f"""
             SELECT
               date(m.timestamp) AS metric_date,
-              COUNT(DISTINCT CASE WHEN m.type = 'user' THEN m.user_id END) AS active_users,
-              COUNT(DISTINCT CASE WHEN m.type = 'user' THEN m.user_id || ':' || m.conversation_id END) AS conversation_count,
-              SUM(CASE WHEN m.type = 'user' THEN 1 ELSE 0 END) AS question_count,
-              SUM(CASE WHEN m.type = 'assistant' THEN 1 ELSE 0 END) AS assistant_reply_count
+              COUNT(DISTINCT CASE WHEN m.type IN ('user', 'query') THEN m.user_id END) AS active_users,
+              COUNT(DISTINCT CASE WHEN m.type IN ('user', 'query') THEN m.user_id || ':' || m.conversation_id END) AS conversation_count,
+              SUM(CASE WHEN m.type IN ('user', 'query') THEN 1 ELSE 0 END) AS question_count,
+              SUM(CASE WHEN m.type IN ('assistant', 'answer') THEN 1 ELSE 0 END) AS assistant_reply_count
             FROM t_chat_memory AS m
             LEFT JOIN t_conversation_context AS ctx
               ON ctx.user_id = m.user_id AND ctx.conversation_id = m.conversation_id
@@ -1110,7 +1636,7 @@ def get_ops_dashboard(
             FROM t_chat_memory AS m
             LEFT JOIN t_conversation_context AS ctx
               ON ctx.user_id = m.user_id AND ctx.conversation_id = m.conversation_id
-            WHERE {chat_where} AND m.type = 'user'
+            WHERE {chat_where} AND m.type IN ('user', 'query')
             GROUP BY m.user_id
             ORDER BY question_count DESC, last_active_at DESC
             LIMIT 10
@@ -1200,7 +1726,7 @@ def get_ops_dashboard(
 
     recent_unlikes = []
     for row in unlike_rows:
-        reason = json.loads(row["reason"]) if row["reason"] else {}
+        reason = safe_json_loads(row["reason"], {})
         for reason_type in reason.get("feedbackInfoTypes") or []:
             reason_counts[reason_type] = reason_counts.get(reason_type, 0) + 1
         feedback_text = reason.get("feedbackInfo")

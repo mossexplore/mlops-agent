@@ -261,6 +261,117 @@ def test_ops_dashboard_counts_usage_and_feedback():
     assert {item["userId"] for item in data["topUsers"]} == {"l0123456", "l0654321"}
 
 
+def test_quality_feedback_eval_and_experiment_loop():
+    TEST_DB.unlink(missing_ok=True)
+    init_db()
+    conversation_id = "conv-quality-001"
+    request = {
+        "query": "GPU OOM 如何排查",
+        "needDeepThinking": 0,
+        "context": {
+            "userId": "l0123456",
+            "conversationId": conversation_id,
+            "service": "Wise",
+            "scene": "模型任务",
+            "title": "MTP训练任务诊断",
+        },
+    }
+    with client.stream("POST", "/agent/v1/assistant/chat", json=request) as response:
+        answer_id = None
+        query_id = None
+        for line in response.iter_lines():
+            if line and line.startswith("data: "):
+                payload = json.loads(line.removeprefix("data: "))
+                answer_id = payload["messageId"]
+                query_id = payload["queryMessageId"]
+
+    client.post(
+        "/agent/v1/assistant/feedback",
+        json={
+            "feedback": "unlike",
+            "reason": {
+                "feedbackInfo": "回答太泛泛，步骤不可执行",
+                "feedbackInfoTypes": ["缺少操作步骤"],
+            },
+            "context": {
+                "userId": "l0123456",
+                "conversationId": conversation_id,
+                "messageId": answer_id,
+                "queryMessageId": query_id,
+            },
+        },
+    )
+
+    feedback_list = client.post("/agent/v1/quality/feedback/list", json={"page": 1, "pageSize": 10})
+    feedback_items = feedback_list.json()["result"]["data"]
+    assert feedback_items[0]["query"] == "GPU OOM 如何排查"
+    assert feedback_items[0]["status"] == "open"
+
+    annotate = client.post(
+        "/agent/v1/quality/feedback/annotate",
+        json={
+            "answerMessageId": answer_id,
+            "userId": "l0123456",
+            "conversationId": conversation_id,
+            "qualityReason": "unactionable_steps",
+            "annotation": "需要补充资源指标和 OOM 事件检查",
+            "reviewer": "admin",
+        },
+    )
+    assert annotate.json()["result"]["data"]["qualityReason"] == "unactionable_steps"
+
+    from_feedback = client.post(
+        "/agent/v1/quality/eval-case/from-feedback",
+        json={
+            "answerMessageId": answer_id,
+            "userId": "l0123456",
+            "conversationId": conversation_id,
+            "requiredSteps": ["问题识别", "根因候选", "建议动作", "风险提示"],
+            "forbiddenContent": ["编造平台日志"],
+        },
+    )
+    feedback_case = from_feedback.json()["result"]["data"]
+    assert feedback_case["query"] == "GPU OOM 如何排查"
+
+    manual_case = client.post(
+        "/agent/v1/quality/eval-case/save",
+        json={
+            "title": "内存不足标准诊断",
+            "query": "1401027 insufficient memory 报错",
+            "expectedAnswer": "需要包含资源排查和人工确认",
+            "requiredSteps": ["问题识别", "根因候选", "建议动作", "风险提示"],
+            "forbiddenContent": ["直接删除任务"],
+            "tags": ["memory", "oom"],
+        },
+    ).json()["result"]["data"]
+    assert manual_case["caseId"]
+
+    run = client.post(
+        "/agent/v1/quality/eval/run",
+        json={"name": "quality regression", "variant": "baseline", "promptVersion": "diagnostic-v1"},
+    ).json()["result"]["data"]
+    assert run["caseCount"] >= 2
+    assert run["avgScore"] >= 0
+    assert run["results"]
+
+    experiment = client.post(
+        "/agent/v1/quality/experiment/save",
+        json={
+            "name": "检索阈值对比",
+            "variants": ["baseline", "high-recall"],
+            "trafficSplit": {"baseline": 0.5, "high-recall": 0.5},
+            "primaryMetric": "satisfactionRate",
+        },
+    ).json()["result"]["data"]
+    assert experiment["variants"] == ["baseline", "high-recall"]
+
+    dashboard = client.post("/agent/v1/quality/dashboard").json()["result"]["data"]
+    assert dashboard["metrics"]["unlikeRate"] == 1
+    assert dashboard["evalCases"]
+    assert dashboard["evalRuns"]
+    assert dashboard["experiments"]
+
+
 def test_knowledge_save_search_and_chat_grounding():
     TEST_DB.unlink(missing_ok=True)
     init_db()
