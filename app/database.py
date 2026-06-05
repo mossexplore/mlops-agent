@@ -1,5 +1,4 @@
 import json
-import os
 import sqlite3
 import uuid
 from contextlib import contextmanager
@@ -7,8 +6,9 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
+from .config import settings
 
-DB_PATH = Path(os.environ.get("WISE_AGENT_DB_PATH", Path(__file__).resolve().parent.parent / "data" / "agent.db"))
+DB_PATH = settings.db_path
 
 
 def now_text() -> str:
@@ -104,6 +104,13 @@ def init_db(db_path: Optional[Path] = None) -> None:
             );
             """
         )
+
+
+def check_db(db_path: Optional[Path] = None) -> Dict[str, Any]:
+    path = db_path or DB_PATH
+    with connect(path) as conn:
+        conn.execute("SELECT 1").fetchone()
+    return {"ok": True, "path": str(path)}
 
 
 def upsert_conversation(user_id: str, conversation_id: str, title: str, service: str, scene: str) -> None:

@@ -85,6 +85,11 @@ class OpsDashboardRequest(BaseModel):
     scene: Optional[str] = None
 
 
+class LoginRequest(BaseModel):
+    username: str = Field(min_length=1)
+    password: str = Field(min_length=1)
+
+
 def api_response(data: Any = None, code: int = 0, des: str = "success", meta_uuid: Optional[str] = None) -> Dict[str, Any]:
     import uuid
 

@@ -6,14 +6,25 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncIterator
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from .agent import build_answer, stream_chunks
+from .auth import (
+    authenticate,
+    clear_session_cookie,
+    create_session_token,
+    current_user,
+    require_admin,
+    require_page_session,
+    set_session_cookie,
+)
+from .config import settings
 from .database import (
     add_chat,
+    check_db,
     get_ops_dashboard,
     init_db,
     list_chats,
@@ -39,6 +50,7 @@ from .schemas import (
     KnowledgeRevisionListRequest,
     KnowledgeSaveRequest,
     KnowledgeSearchRequest,
+    LoginRequest,
     OpsDashboardRequest,
     api_response,
 )
@@ -54,10 +66,10 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="Wise MLOps Agent", version="1.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version=settings.app_version, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -70,22 +82,68 @@ def dump_model(model):
 
 
 @app.get("/")
-def index() -> FileResponse:
+def index(request: Request) -> FileResponse:
+    redirect = require_page_session(request)
+    if redirect:
+        return redirect
     return FileResponse(STATIC_DIR / "index.html")
 
 
 @app.get("/knowledge")
-def knowledge_page() -> FileResponse:
+def knowledge_page(request: Request) -> FileResponse:
+    redirect = require_page_session(request)
+    if redirect:
+        return redirect
     return FileResponse(STATIC_DIR / "knowledge.html")
 
 
 @app.get("/ops")
-def ops_page() -> FileResponse:
+def ops_page(request: Request) -> FileResponse:
+    redirect = require_page_session(request)
+    if redirect:
+        return redirect
     return FileResponse(STATIC_DIR / "ops.html")
 
 
+@app.get("/login")
+def login_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "login.html")
+
+
+@app.get("/healthz")
+def healthz():
+    return {"status": "ok", "app": settings.app_name, "version": settings.app_version}
+
+
+@app.get("/readyz")
+def readyz():
+    db = check_db()
+    return {"status": "ok", "database": db, "authEnabled": settings.auth_enabled}
+
+
+@app.post("/agent/v1/auth/login")
+def login(request: LoginRequest, response: Response):
+    user = authenticate(request.username, request.password)
+    if not user:
+        return api_response(data=None, code=401, des="用户名或密码错误")
+    token = create_session_token(user["userId"], user["role"])
+    set_session_cookie(response, token)
+    return api_response(data={"userId": user["userId"], "role": user["role"], "token": token})
+
+
+@app.post("/agent/v1/auth/logout")
+def logout(response: Response):
+    clear_session_cookie(response)
+    return api_response(data=None)
+
+
+@app.get("/agent/v1/auth/me")
+def me(user=Depends(require_admin)):
+    return api_response(data={**user, "authEnabled": settings.auth_enabled})
+
+
 @app.post("/agent/v1/assistant/chat")
-async def chat(request: ChatRequest) -> StreamingResponse:
+async def chat(request: ChatRequest, _user=Depends(current_user)) -> StreamingResponse:
     context = request.context
     query_message_id = str(uuid.uuid4())
     answer_message_id = str(uuid.uuid4())
@@ -126,7 +184,7 @@ async def chat(request: ChatRequest) -> StreamingResponse:
 
 
 @app.post("/agent/v1/assistant/feedback")
-def feedback(request: FeedbackRequest):
+def feedback(request: FeedbackRequest, _user=Depends(current_user)):
     save_feedback(
         answer_message_id=request.context.messageId,
         user_id=request.context.userId,
@@ -139,30 +197,30 @@ def feedback(request: FeedbackRequest):
 
 
 @app.post("/agent/v1/assistant/conversation/list")
-def conversation_list(request: ConversationListRequest):
+def conversation_list(request: ConversationListRequest, _user=Depends(current_user)):
     data = list_conversations(request.userId, request.conversationId)
     return api_response(data=data, meta_uuid=request.conversationId)
 
 
 @app.post("/agent/v1/assistant/chat/list")
-def chat_list(request: ChatListRequest):
+def chat_list(request: ChatListRequest, _user=Depends(current_user)):
     data = list_chats(request.userId, request.conversationId, request.page, request.pageSize)
     return api_response(data=data, meta_uuid=request.conversationId)
 
 
 @app.post("/agent/v1/knowledge/save")
-def knowledge_save(request: KnowledgeSaveRequest):
+def knowledge_save(request: KnowledgeSaveRequest, _user=Depends(require_admin)):
     data = write_markdown_knowledge(request.title, request.content, request.filename)
     return api_response(data=data)
 
 
 @app.post("/agent/v1/knowledge/list")
-def knowledge_list():
+def knowledge_list(_user=Depends(require_admin)):
     return api_response(data=list_markdown_knowledge())
 
 
 @app.post("/agent/v1/knowledge/detail")
-def knowledge_detail(request: KnowledgeDetailRequest):
+def knowledge_detail(request: KnowledgeDetailRequest, _user=Depends(require_admin)):
     try:
         return api_response(data=get_markdown_knowledge_detail(request.filename))
     except FileNotFoundError as exc:
@@ -170,17 +228,17 @@ def knowledge_detail(request: KnowledgeDetailRequest):
 
 
 @app.post("/agent/v1/knowledge/search")
-def knowledge_search(request: KnowledgeSearchRequest):
+def knowledge_search(request: KnowledgeSearchRequest, _user=Depends(require_admin)):
     return api_response(data=retrieve_knowledge(request.query, request.topK))
 
 
 @app.post("/agent/v1/knowledge/revision/list")
-def knowledge_revision_list(request: KnowledgeRevisionListRequest):
+def knowledge_revision_list(request: KnowledgeRevisionListRequest, _user=Depends(require_admin)):
     return api_response(data=list_markdown_knowledge_revisions(request.filename, request.page, request.pageSize))
 
 
 @app.post("/agent/v1/ops/dashboard")
-def ops_dashboard(request: OpsDashboardRequest):
+def ops_dashboard(request: OpsDashboardRequest, _user=Depends(require_admin)):
     return api_response(
         data=get_ops_dashboard(
             start_date=request.startDate,

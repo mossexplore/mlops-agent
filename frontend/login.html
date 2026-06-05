@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Wise MLOps Login</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/login.css" />
+  </head>
+  <body>
+    <div class="app-background" aria-hidden="true"></div>
+    <main class="login-shell">
+      <form id="loginForm" class="login-card">
+        <header class="brand">
+          <div class="brand-mark">W</div>
+          <div>
+            <h1>Wise MLOps Agent</h1>
+            <p>Production Access</p>
+          </div>
+        </header>
+        <div class="login-title">
+          <p>管理员登录</p>
+          <h2>进入诊断工作台</h2>
+        </div>
+        <label>
+          用户名
+          <input id="username" autocomplete="username" value="admin" required />
+        </label>
+        <label>
+          密码
+          <input id="password" autocomplete="current-password" type="password" required />
+        </label>
+        <button id="loginButton" type="submit">登录</button>
+        <p id="loginMessage" class="login-message"></p>
+      </form>
+    </main>
+    <script src="/static/login.js"></script>
+  </body>
+</html>

@@ -110,7 +110,8 @@ button {
   gap: 8px;
 }
 
-.nav-links a {
+.nav-links a,
+.nav-logout {
   display: grid;
   place-items: center;
   min-height: 36px;
@@ -123,10 +124,19 @@ button {
 }
 
 .nav-links a:hover,
-.nav-links a.active {
+.nav-links a.active,
+.nav-logout:hover {
   border-color: rgba(129, 140, 248, 0.36);
   color: #ffffff;
   background: rgba(129, 140, 248, 0.14);
+}
+
+.nav-logout {
+  grid-column: 1 / -1;
+}
+
+.nav-logout[hidden] {
+  display: none !important;
 }
 
 .context-panel,

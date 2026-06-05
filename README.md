@@ -4,6 +4,10 @@
 
 ## 功能
 
+- `GET /healthz`：应用存活检查。
+- `GET /readyz`：应用就绪检查，会验证数据库连接。
+- `POST /agent/v1/auth/login`：管理员登录，生产环境可通过环境变量开启认证。
+- `POST /agent/v1/auth/logout`：退出登录并清理会话 Cookie。
 - `POST /agent/v1/assistant/chat`：用户提问，Agent 通过 `text/event-stream` 按 `data: {...}` 流式返回。
 - `POST /agent/v1/assistant/feedback`：对 Agent 回复点赞、点踩或置为 `NONE`，点踩可提交原因。
 - `POST /agent/v1/assistant/conversation/list`：查询用户历史会话列表。
@@ -44,6 +48,53 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 - API 文档：http://127.0.0.1:8000/docs
 
 首次启动会自动创建 `data/agent.db`。
+
+## 生产化配置
+
+本地开发默认不强制登录。生产部署建议复制 `.env.example` 为 `.env`，并至少修改：
+
+```bash
+WISE_ENV=production
+WISE_AUTH_ENABLED=true
+WISE_AUTH_SECRET=replace-with-a-long-random-secret
+WISE_ADMIN_USERNAME=admin
+WISE_ADMIN_PASSWORD=replace-with-a-strong-password
+WISE_CORS_ORIGINS=http://your-domain.example.com
+```
+
+关键配置：
+
+- `WISE_AGENT_DB_PATH`：SQLite 数据库路径，默认 `data/agent.db`。
+- `WISE_AUTH_ENABLED`：是否开启页面和管理接口认证。
+- `WISE_AUTH_SECRET`：会话签名密钥，生产环境必须改成强随机值。
+- `WISE_ADMIN_USERNAME` / `WISE_ADMIN_PASSWORD`：管理员账号密码。
+- `WISE_SESSION_TTL_SECONDS`：登录会话有效期。
+- `WISE_CORS_ORIGINS`：允许跨域来源，多个地址用英文逗号分隔。
+
+开启认证后，访问 `/`、`/knowledge`、`/ops` 会先进入 `/login`。知识库和运营看板接口需要管理员会话。
+
+## Docker 部署
+
+```bash
+cp .env.example .env
+# 编辑 .env 中的密钥、管理员密码和 CORS 域名
+docker compose up --build
+```
+
+容器会把以下目录挂载到本地，避免运行数据进入镜像：
+
+```text
+data/
+skills/local_markdown_knowledge/knowledge/
+skills/local_markdown_knowledge/indexes/
+```
+
+健康检查：
+
+```bash
+curl http://127.0.0.1:8000/healthz
+curl http://127.0.0.1:8000/readyz
+```
 
 ## 本地 Markdown 知识库
 

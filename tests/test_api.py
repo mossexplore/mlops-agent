@@ -17,6 +17,31 @@ from app.main import app
 client = TestClient(app)
 
 
+def test_health_ready_and_login_endpoints():
+    TEST_DB.unlink(missing_ok=True)
+    init_db()
+
+    health = client.get("/healthz")
+    assert health.status_code == 200
+    assert health.json()["status"] == "ok"
+
+    ready = client.get("/readyz")
+    assert ready.status_code == 200
+    assert ready.json()["database"]["ok"] is True
+
+    failed_login = client.post("/agent/v1/auth/login", json={"username": "admin", "password": "wrong"})
+    assert failed_login.json()["result"]["code"] == 401
+
+    login = client.post("/agent/v1/auth/login", json={"username": "admin", "password": "change-me"})
+    payload = login.json()["result"]
+    assert payload["code"] == 0
+    assert payload["data"]["role"] == "admin"
+    assert payload["data"]["token"]
+
+    me = client.get("/agent/v1/auth/me")
+    assert me.json()["result"]["data"]["role"] == "admin"
+
+
 def test_chat_stream_feedback_and_history():
     TEST_DB.unlink(missing_ok=True)
     init_db()
