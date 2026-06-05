@@ -11,8 +11,10 @@
 - `POST /agent/v1/knowledge/save`：保存本地 Markdown 知识，并自动重建检索索引。
 - `POST /agent/v1/knowledge/list`：查询本地知识文件列表。
 - `POST /agent/v1/knowledge/search`：检索本地 Markdown 知识片段。
+- `POST /agent/v1/ops/dashboard`：查询运营看板聚合数据，包括日活、提问、会话、点赞、点踩和点踩原因。
 - `GET /`：Web 聊天工作台，支持流式显示、历史会话和反馈。
 - `GET /knowledge`：本地 Markdown 知识库管理页面。
+- `GET /ops`：运营看板页面，支持按日期、用户、来源和场景筛选。
 
 ## 技术栈
 
@@ -38,6 +40,7 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 - Web 页面：http://127.0.0.1:8000
 - 知识库管理：http://127.0.0.1:8000/knowledge
+- 运营看板：http://127.0.0.1:8000/ops
 - API 文档：http://127.0.0.1:8000/docs
 
 首次启动会自动创建 `data/agent.db`。

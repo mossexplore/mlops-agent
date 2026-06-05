@@ -3,7 +3,7 @@ import os
 import sqlite3
 import uuid
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -13,6 +13,14 @@ DB_PATH = Path(os.environ.get("WISE_AGENT_DB_PATH", Path(__file__).resolve().par
 
 def now_text() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def today_text() -> str:
+    return date.today().isoformat()
+
+
+def default_start_date_text(days: int = 6) -> str:
+    return (date.today() - timedelta(days=days)).isoformat()
 
 
 @contextmanager
@@ -379,3 +387,284 @@ def list_knowledge_revisions(filename: Optional[str] = None, page: int = 1, page
         }
         for row in rows
     ]
+
+
+def _date_range(start_date: str, end_date: str) -> List[str]:
+    start = datetime.strptime(start_date, "%Y-%m-%d").date()
+    end = datetime.strptime(end_date, "%Y-%m-%d").date()
+    if end < start:
+        start, end = end, start
+    days = (end - start).days
+    return [(start + timedelta(days=index)).isoformat() for index in range(days + 1)]
+
+
+def _ops_filters(
+    table_alias: str,
+    start_date: str,
+    end_date: str,
+    user_id: Optional[str],
+    service: Optional[str],
+    scene: Optional[str],
+) -> tuple[str, List[Any]]:
+    where = [f"date({table_alias}.timestamp) BETWEEN ? AND ?"]
+    params: List[Any] = [start_date, end_date]
+    if user_id:
+        where.append(f"{table_alias}.user_id = ?")
+        params.append(user_id)
+    if service:
+        where.append("ctx.service = ?")
+        params.append(service)
+    if scene:
+        where.append("ctx.scene = ?")
+        params.append(scene)
+    return " AND ".join(where), params
+
+
+def get_ops_dashboard(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    user_id: Optional[str] = None,
+    service: Optional[str] = None,
+    scene: Optional[str] = None,
+) -> Dict[str, Any]:
+    effective_start = start_date or default_start_date_text()
+    effective_end = end_date or today_text()
+    days = _date_range(effective_start, effective_end)
+
+    chat_where, chat_params = _ops_filters("m", effective_start, effective_end, user_id, service, scene)
+    feedback_where, feedback_params = _ops_filters("f", effective_start, effective_end, user_id, service, scene)
+
+    daily = {
+        day: {
+            "date": day,
+            "activeUsers": 0,
+            "conversationCount": 0,
+            "questionCount": 0,
+            "assistantReplyCount": 0,
+            "likeCount": 0,
+            "unlikeCount": 0,
+            "feedbackCount": 0,
+        }
+        for day in days
+    }
+    top_users: Dict[str, Dict[str, Any]] = {}
+    reason_counts: Dict[str, int] = {}
+
+    with connect() as conn:
+        chat_summary = conn.execute(
+            f"""
+            SELECT
+              COUNT(DISTINCT CASE WHEN m.type = 'user' THEN m.user_id END) AS active_users,
+              COUNT(DISTINCT CASE WHEN m.type = 'user' THEN m.user_id || ':' || m.conversation_id END) AS conversation_count,
+              SUM(CASE WHEN m.type = 'user' THEN 1 ELSE 0 END) AS question_count,
+              SUM(CASE WHEN m.type = 'assistant' THEN 1 ELSE 0 END) AS assistant_reply_count
+            FROM t_chat_memory AS m
+            LEFT JOIN t_conversation_context AS ctx
+              ON ctx.user_id = m.user_id AND ctx.conversation_id = m.conversation_id
+            WHERE {chat_where}
+            """,
+            chat_params,
+        ).fetchone()
+
+        feedback_summary = conn.execute(
+            f"""
+            SELECT
+              SUM(CASE WHEN f.feedback = 'like' THEN 1 ELSE 0 END) AS like_count,
+              SUM(CASE WHEN f.feedback = 'unlike' THEN 1 ELSE 0 END) AS unlike_count,
+              SUM(CASE WHEN f.feedback IN ('like', 'unlike') THEN 1 ELSE 0 END) AS feedback_count
+            FROM t_chat_feedback AS f
+            LEFT JOIN t_conversation_context AS ctx
+              ON ctx.user_id = f.user_id AND ctx.conversation_id = f.conversation_id
+            WHERE {feedback_where}
+            """,
+            feedback_params,
+        ).fetchone()
+
+        chat_daily_rows = conn.execute(
+            f"""
+            SELECT
+              date(m.timestamp) AS metric_date,
+              COUNT(DISTINCT CASE WHEN m.type = 'user' THEN m.user_id END) AS active_users,
+              COUNT(DISTINCT CASE WHEN m.type = 'user' THEN m.user_id || ':' || m.conversation_id END) AS conversation_count,
+              SUM(CASE WHEN m.type = 'user' THEN 1 ELSE 0 END) AS question_count,
+              SUM(CASE WHEN m.type = 'assistant' THEN 1 ELSE 0 END) AS assistant_reply_count
+            FROM t_chat_memory AS m
+            LEFT JOIN t_conversation_context AS ctx
+              ON ctx.user_id = m.user_id AND ctx.conversation_id = m.conversation_id
+            WHERE {chat_where}
+            GROUP BY date(m.timestamp)
+            ORDER BY metric_date ASC
+            """,
+            chat_params,
+        ).fetchall()
+
+        feedback_daily_rows = conn.execute(
+            f"""
+            SELECT
+              date(f.timestamp) AS metric_date,
+              SUM(CASE WHEN f.feedback = 'like' THEN 1 ELSE 0 END) AS like_count,
+              SUM(CASE WHEN f.feedback = 'unlike' THEN 1 ELSE 0 END) AS unlike_count,
+              SUM(CASE WHEN f.feedback IN ('like', 'unlike') THEN 1 ELSE 0 END) AS feedback_count
+            FROM t_chat_feedback AS f
+            LEFT JOIN t_conversation_context AS ctx
+              ON ctx.user_id = f.user_id AND ctx.conversation_id = f.conversation_id
+            WHERE {feedback_where}
+            GROUP BY date(f.timestamp)
+            ORDER BY metric_date ASC
+            """,
+            feedback_params,
+        ).fetchall()
+
+        user_rows = conn.execute(
+            f"""
+            SELECT
+              m.user_id,
+              COUNT(*) AS question_count,
+              COUNT(DISTINCT m.conversation_id) AS conversation_count,
+              MAX(m.timestamp) AS last_active_at
+            FROM t_chat_memory AS m
+            LEFT JOIN t_conversation_context AS ctx
+              ON ctx.user_id = m.user_id AND ctx.conversation_id = m.conversation_id
+            WHERE {chat_where} AND m.type = 'user'
+            GROUP BY m.user_id
+            ORDER BY question_count DESC, last_active_at DESC
+            LIMIT 10
+            """,
+            chat_params,
+        ).fetchall()
+
+        user_feedback_rows = conn.execute(
+            f"""
+            SELECT
+              f.user_id,
+              SUM(CASE WHEN f.feedback = 'like' THEN 1 ELSE 0 END) AS like_count,
+              SUM(CASE WHEN f.feedback = 'unlike' THEN 1 ELSE 0 END) AS unlike_count
+            FROM t_chat_feedback AS f
+            LEFT JOIN t_conversation_context AS ctx
+              ON ctx.user_id = f.user_id AND ctx.conversation_id = f.conversation_id
+            WHERE {feedback_where}
+            GROUP BY f.user_id
+            """,
+            feedback_params,
+        ).fetchall()
+
+        unlike_rows = conn.execute(
+            f"""
+            SELECT
+              f.user_id, f.conversation_id, f.answer_message_id, f.query_message_id,
+              f.reason, f.timestamp, ctx.service, ctx.scene,
+              query.content AS query_content,
+              answer.content AS answer_content
+            FROM t_chat_feedback AS f
+            LEFT JOIN t_conversation_context AS ctx
+              ON ctx.user_id = f.user_id AND ctx.conversation_id = f.conversation_id
+            LEFT JOIN t_chat_memory AS query
+              ON query.memory_id = f.query_message_id
+             AND query.user_id = f.user_id
+             AND query.conversation_id = f.conversation_id
+            LEFT JOIN t_chat_memory AS answer
+              ON answer.memory_id = f.answer_message_id
+             AND answer.user_id = f.user_id
+             AND answer.conversation_id = f.conversation_id
+            WHERE {feedback_where} AND f.feedback = 'unlike'
+            ORDER BY f.timestamp DESC
+            LIMIT 20
+            """,
+            feedback_params,
+        ).fetchall()
+
+    for row in chat_daily_rows:
+        item = daily.get(row["metric_date"])
+        if item:
+            item["activeUsers"] = row["active_users"] or 0
+            item["conversationCount"] = row["conversation_count"] or 0
+            item["questionCount"] = row["question_count"] or 0
+            item["assistantReplyCount"] = row["assistant_reply_count"] or 0
+
+    for row in feedback_daily_rows:
+        item = daily.get(row["metric_date"])
+        if item:
+            item["likeCount"] = row["like_count"] or 0
+            item["unlikeCount"] = row["unlike_count"] or 0
+            item["feedbackCount"] = row["feedback_count"] or 0
+
+    for row in user_rows:
+        top_users[row["user_id"]] = {
+            "userId": row["user_id"],
+            "questionCount": row["question_count"] or 0,
+            "conversationCount": row["conversation_count"] or 0,
+            "likeCount": 0,
+            "unlikeCount": 0,
+            "lastActiveAt": row["last_active_at"],
+        }
+
+    for row in user_feedback_rows:
+        user = top_users.setdefault(
+            row["user_id"],
+            {
+                "userId": row["user_id"],
+                "questionCount": 0,
+                "conversationCount": 0,
+                "likeCount": 0,
+                "unlikeCount": 0,
+                "lastActiveAt": None,
+            },
+        )
+        user["likeCount"] = row["like_count"] or 0
+        user["unlikeCount"] = row["unlike_count"] or 0
+
+    recent_unlikes = []
+    for row in unlike_rows:
+        reason = json.loads(row["reason"]) if row["reason"] else {}
+        for reason_type in reason.get("feedbackInfoTypes") or []:
+            reason_counts[reason_type] = reason_counts.get(reason_type, 0) + 1
+        feedback_text = reason.get("feedbackInfo")
+        if feedback_text:
+            reason_counts[feedback_text] = reason_counts.get(feedback_text, 0) + 1
+        recent_unlikes.append(
+            {
+                "userId": row["user_id"],
+                "conversationId": row["conversation_id"],
+                "answerMessageId": row["answer_message_id"],
+                "queryMessageId": row["query_message_id"],
+                "service": row["service"],
+                "scene": row["scene"],
+                "query": row["query_content"] or "",
+                "answerPreview": (row["answer_content"] or "")[:180],
+                "reason": reason,
+                "timestamp": row["timestamp"],
+            }
+        )
+
+    question_count = (chat_summary["question_count"] if chat_summary else 0) or 0
+    assistant_reply_count = (chat_summary["assistant_reply_count"] if chat_summary else 0) or 0
+    feedback_count = (feedback_summary["feedback_count"] if feedback_summary else 0) or 0
+    unlike_count = (feedback_summary["unlike_count"] if feedback_summary else 0) or 0
+    summary = {
+        "activeUsers": (chat_summary["active_users"] if chat_summary else 0) or 0,
+        "conversationCount": (chat_summary["conversation_count"] if chat_summary else 0) or 0,
+        "questionCount": question_count,
+        "assistantReplyCount": assistant_reply_count,
+        "likeCount": (feedback_summary["like_count"] if feedback_summary else 0) or 0,
+        "unlikeCount": unlike_count,
+        "feedbackCount": feedback_count,
+        "feedbackRate": round(feedback_count / assistant_reply_count, 4) if assistant_reply_count else 0,
+        "unlikeRate": round(unlike_count / feedback_count, 4) if feedback_count else 0,
+    }
+
+    return {
+        "range": {"startDate": days[0], "endDate": days[-1]},
+        "filters": {"userId": user_id, "service": service, "scene": scene},
+        "summary": summary,
+        "daily": list(daily.values()),
+        "reasonTop": [
+            {"reason": key, "count": value}
+            for key, value in sorted(reason_counts.items(), key=lambda item: item[1], reverse=True)[:10]
+        ],
+        "recentUnlikes": recent_unlikes,
+        "topUsers": sorted(
+            top_users.values(),
+            key=lambda item: (item["questionCount"], item["unlikeCount"], item["likeCount"]),
+            reverse=True,
+        )[:10],
+    }

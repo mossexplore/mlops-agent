@@ -12,7 +12,15 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from .agent import build_answer, stream_chunks
-from .database import add_chat, init_db, list_chats, list_conversations, save_feedback, upsert_conversation
+from .database import (
+    add_chat,
+    get_ops_dashboard,
+    init_db,
+    list_chats,
+    list_conversations,
+    save_feedback,
+    upsert_conversation,
+)
 from .knowledge import (
     build_grounded_answer,
     get_markdown_knowledge_detail,
@@ -31,6 +39,7 @@ from .schemas import (
     KnowledgeRevisionListRequest,
     KnowledgeSaveRequest,
     KnowledgeSearchRequest,
+    OpsDashboardRequest,
     api_response,
 )
 
@@ -68,6 +77,11 @@ def index() -> FileResponse:
 @app.get("/knowledge")
 def knowledge_page() -> FileResponse:
     return FileResponse(STATIC_DIR / "knowledge.html")
+
+
+@app.get("/ops")
+def ops_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "ops.html")
 
 
 @app.post("/agent/v1/assistant/chat")
@@ -163,3 +177,16 @@ def knowledge_search(request: KnowledgeSearchRequest):
 @app.post("/agent/v1/knowledge/revision/list")
 def knowledge_revision_list(request: KnowledgeRevisionListRequest):
     return api_response(data=list_markdown_knowledge_revisions(request.filename, request.page, request.pageSize))
+
+
+@app.post("/agent/v1/ops/dashboard")
+def ops_dashboard(request: OpsDashboardRequest):
+    return api_response(
+        data=get_ops_dashboard(
+            start_date=request.startDate,
+            end_date=request.endDate,
+            user_id=request.userId,
+            service=request.service,
+            scene=request.scene,
+        )
+    )

@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Wise MLOps Ops</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/ops.css" />
+  </head>
+  <body>
+    <div class="app-background" aria-hidden="true"></div>
+    <main class="ops-shell">
+      <aside class="ops-side">
+        <header class="brand">
+          <div class="brand-mark">W</div>
+          <div>
+            <h1>Wise MLOps Agent</h1>
+            <p>Operations Analytics</p>
+          </div>
+        </header>
+        <nav class="nav-links">
+          <a href="/">诊断会话</a>
+          <a href="/knowledge">知识库</a>
+          <a href="/ops" class="active">运营看板</a>
+        </nav>
+
+        <form id="opsFilters" class="ops-filter-panel">
+          <div class="panel-title">
+            <span>筛选条件</span>
+            <button id="refreshOps" class="ghost-button" type="submit">刷新</button>
+          </div>
+          <label>
+            开始日期
+            <input id="startDate" type="date" />
+          </label>
+          <label>
+            结束日期
+            <input id="endDate" type="date" />
+          </label>
+          <label>
+            用户
+            <input id="filterUserId" placeholder="全部用户" />
+          </label>
+          <label>
+            来源
+            <select id="filterService">
+              <option value="">全部来源</option>
+              <option>Wise</option>
+              <option>MTP</option>
+              <option>MEP</option>
+            </select>
+          </label>
+          <label>
+            场景
+            <input id="filterScene" placeholder="全部场景" />
+          </label>
+        </form>
+      </aside>
+
+      <section class="ops-workspace">
+        <header class="ops-hero">
+          <div>
+            <p id="opsRange">近 7 天</p>
+            <h2>Agent 运营看板</h2>
+          </div>
+          <div class="status-strip">
+            <span>DAU</span>
+            <span>Feedback</span>
+            <span>Quality</span>
+          </div>
+        </header>
+
+        <section class="ops-content">
+          <section id="summaryCards" class="metric-grid"></section>
+
+          <section class="ops-grid">
+            <article class="ops-panel trend-panel">
+              <div class="section-head">
+                <div>
+                  <p>Usage Trend</p>
+                  <h3>每日使用趋势</h3>
+                </div>
+              </div>
+              <div id="dailyTrend" class="daily-trend"></div>
+            </article>
+
+            <article class="ops-panel">
+              <div class="section-head">
+                <div>
+                  <p>Feedback Quality</p>
+                  <h3>点赞 / 点踩概览</h3>
+                </div>
+              </div>
+              <div id="feedbackSplit" class="feedback-split"></div>
+              <div id="reasonTop" class="reason-list"></div>
+            </article>
+          </section>
+
+          <section class="ops-grid lower-grid">
+            <article class="ops-panel">
+              <div class="section-head">
+                <div>
+                  <p>User Ranking</p>
+                  <h3>高频使用用户</h3>
+                </div>
+              </div>
+              <div id="topUsers" class="table-list"></div>
+            </article>
+
+            <article class="ops-panel">
+              <div class="section-head">
+                <div>
+                  <p>Recent Risks</p>
+                  <h3>最近点踩记录</h3>
+                </div>
+              </div>
+              <div id="recentUnlikes" class="unlike-list"></div>
+            </article>
+          </section>
+        </section>
+      </section>
+    </main>
+    <script src="/static/ops.js"></script>
+  </body>
+</html>

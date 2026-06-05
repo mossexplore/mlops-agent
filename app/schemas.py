@@ -77,6 +77,14 @@ class KnowledgeDetailRequest(BaseModel):
     filename: str = Field(min_length=1)
 
 
+class OpsDashboardRequest(BaseModel):
+    startDate: Optional[str] = None
+    endDate: Optional[str] = None
+    userId: Optional[str] = None
+    service: Optional[str] = None
+    scene: Optional[str] = None
+
+
 def api_response(data: Any = None, code: int = 0, des: str = "success", meta_uuid: Optional[str] = None) -> Dict[str, Any]:
     import uuid
 

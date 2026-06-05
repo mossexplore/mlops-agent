@@ -140,6 +140,78 @@ def test_feedback_without_query_message_id_is_recorded_in_database():
     assert row["feedback"] == "like"
 
 
+def test_ops_dashboard_counts_usage_and_feedback():
+    TEST_DB.unlink(missing_ok=True)
+    init_db()
+
+    def run_chat(conversation_id, user_id, query):
+        request = {
+            "query": query,
+            "needDeepThinking": 0,
+            "context": {
+                "userId": user_id,
+                "conversationId": conversation_id,
+                "service": "Wise",
+                "scene": "模型任务",
+                "title": "MTP训练任务诊断",
+            },
+        }
+        with client.stream("POST", "/agent/v1/assistant/chat", json=request) as response:
+            message_id = None
+            query_message_id = None
+            for line in response.iter_lines():
+                if line and line.startswith("data: "):
+                    payload = json.loads(line.removeprefix("data: "))
+                    message_id = payload["messageId"]
+                    query_message_id = payload["queryMessageId"]
+        return message_id, query_message_id
+
+    answer_1, query_1 = run_chat("conv-ops-001", "l0123456", "任务内存不足怎么处理")
+    answer_2, query_2 = run_chat("conv-ops-002", "l0654321", "GPU OOM 如何排查")
+
+    client.post(
+        "/agent/v1/assistant/feedback",
+        json={
+            "feedback": "like",
+            "context": {
+                "userId": "l0123456",
+                "conversationId": "conv-ops-001",
+                "messageId": answer_1,
+                "queryMessageId": query_1,
+            },
+        },
+    )
+    client.post(
+        "/agent/v1/assistant/feedback",
+        json={
+            "feedback": "unlike",
+            "reason": {
+                "feedbackInfo": "缺少日志分析",
+                "feedbackInfoTypes": ["缺少操作步骤"],
+            },
+            "context": {
+                "userId": "l0654321",
+                "conversationId": "conv-ops-002",
+                "messageId": answer_2,
+                "queryMessageId": query_2,
+            },
+        },
+    )
+
+    response = client.post("/agent/v1/ops/dashboard", json={"service": "Wise", "scene": "模型任务"})
+    data = response.json()["result"]["data"]
+
+    assert data["summary"]["activeUsers"] == 2
+    assert data["summary"]["questionCount"] == 2
+    assert data["summary"]["assistantReplyCount"] == 2
+    assert data["summary"]["likeCount"] == 1
+    assert data["summary"]["unlikeCount"] == 1
+    assert data["summary"]["feedbackRate"] == 1
+    assert data["reasonTop"][0]["reason"] == "缺少操作步骤"
+    assert data["recentUnlikes"][0]["query"] == "GPU OOM 如何排查"
+    assert {item["userId"] for item in data["topUsers"]} == {"l0123456", "l0654321"}
+
+
 def test_knowledge_save_search_and_chat_grounding():
     TEST_DB.unlink(missing_ok=True)
     init_db()
