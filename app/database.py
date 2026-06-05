@@ -86,6 +86,14 @@ def init_db(db_path: Optional[Path] = None) -> None:
               size INTEGER NOT NULL DEFAULT 0,
               content_hash TEXT NOT NULL,
               preview TEXT,
+              category TEXT NOT NULL DEFAULT '未分类',
+              tags TEXT NOT NULL DEFAULT '[]',
+              status TEXT NOT NULL DEFAULT 'published',
+              owner TEXT,
+              visibility TEXT NOT NULL DEFAULT 'internal',
+              review_notes TEXT,
+              published_at TEXT,
+              archived_at TEXT,
               created_at TEXT,
               updated_at TEXT,
               PRIMARY KEY (knowledge_id)
@@ -99,11 +107,50 @@ def init_db(db_path: Optional[Path] = None) -> None:
               content TEXT NOT NULL,
               size INTEGER NOT NULL DEFAULT 0,
               content_hash TEXT NOT NULL,
+              action TEXT NOT NULL DEFAULT 'save',
+              status TEXT NOT NULL DEFAULT 'published',
+              category TEXT NOT NULL DEFAULT '未分类',
+              tags TEXT NOT NULL DEFAULT '[]',
+              review_notes TEXT,
               timestamp TEXT,
               PRIMARY KEY (revision_id)
             );
+
+            CREATE TABLE IF NOT EXISTS t_knowledge_hit (
+              hit_id TEXT NOT NULL,
+              channel TEXT NOT NULL,
+              query TEXT NOT NULL,
+              user_id TEXT,
+              conversation_id TEXT,
+              message_id TEXT,
+              filename TEXT,
+              heading TEXT,
+              score REAL NOT NULL DEFAULT 0,
+              status TEXT,
+              timestamp TEXT,
+              PRIMARY KEY (hit_id)
+            );
             """
         )
+        _ensure_column(conn, "t_knowledge_file", "category", "TEXT NOT NULL DEFAULT '未分类'")
+        _ensure_column(conn, "t_knowledge_file", "tags", "TEXT NOT NULL DEFAULT '[]'")
+        _ensure_column(conn, "t_knowledge_file", "status", "TEXT NOT NULL DEFAULT 'published'")
+        _ensure_column(conn, "t_knowledge_file", "owner", "TEXT")
+        _ensure_column(conn, "t_knowledge_file", "visibility", "TEXT NOT NULL DEFAULT 'internal'")
+        _ensure_column(conn, "t_knowledge_file", "review_notes", "TEXT")
+        _ensure_column(conn, "t_knowledge_file", "published_at", "TEXT")
+        _ensure_column(conn, "t_knowledge_file", "archived_at", "TEXT")
+        _ensure_column(conn, "t_knowledge_file_revision", "action", "TEXT NOT NULL DEFAULT 'save'")
+        _ensure_column(conn, "t_knowledge_file_revision", "status", "TEXT NOT NULL DEFAULT 'published'")
+        _ensure_column(conn, "t_knowledge_file_revision", "category", "TEXT NOT NULL DEFAULT '未分类'")
+        _ensure_column(conn, "t_knowledge_file_revision", "tags", "TEXT NOT NULL DEFAULT '[]'")
+        _ensure_column(conn, "t_knowledge_file_revision", "review_notes", "TEXT")
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+    columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column not in columns:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
 def check_db(db_path: Optional[Path] = None) -> Dict[str, Any]:
@@ -281,26 +328,55 @@ def upsert_knowledge_file(
     content_hash: str,
     size: int,
     preview: str,
+    category: Optional[str] = None,
+    tags: Optional[List[str]] = None,
+    status: Optional[str] = None,
+    owner: Optional[str] = None,
+    visibility: Optional[str] = None,
+    review_notes: Optional[str] = None,
     create_revision: bool = True,
     timestamp: Optional[str] = None,
+    action: str = "save",
 ) -> Dict[str, Any]:
     effective_timestamp = timestamp or now_text()
+    normalized_tags = json.dumps(tags or [], ensure_ascii=False)
     with connect() as conn:
         existing = conn.execute(
-            "SELECT knowledge_id, created_at, updated_at, content_hash FROM t_knowledge_file WHERE filename = ?",
+            """
+            SELECT knowledge_id, created_at, updated_at, content_hash, category, tags, status,
+                   owner, visibility, review_notes, published_at, archived_at
+            FROM t_knowledge_file
+            WHERE filename = ?
+            """,
             (filename,),
         ).fetchone()
         knowledge_id = existing["knowledge_id"] if existing else str(uuid.uuid4())
         created_at = existing["created_at"] if existing else effective_timestamp
+        effective_category = category or (existing["category"] if existing else "未分类")
+        effective_tags = normalized_tags if tags is not None else (existing["tags"] if existing else "[]")
+        effective_status = status or (existing["status"] if existing else "published")
+        effective_owner = owner if owner is not None else (existing["owner"] if existing else None)
+        effective_visibility = visibility or (existing["visibility"] if existing else "internal")
+        effective_review_notes = review_notes if review_notes is not None else (existing["review_notes"] if existing else None)
         content_changed = not existing or existing["content_hash"] != content_hash
         updated_at = effective_timestamp if (create_revision or content_changed) else existing["updated_at"]
+        published_at = existing["published_at"] if existing else None
+        archived_at = existing["archived_at"] if existing else None
+        if effective_status == "published" and not published_at:
+            published_at = effective_timestamp
+        if effective_status == "archived" and not archived_at:
+            archived_at = effective_timestamp
+        if effective_status != "archived":
+            archived_at = None
 
         conn.execute(
             """
             INSERT INTO t_knowledge_file(
-              knowledge_id, filename, title, file_path, size, content_hash, preview, created_at, updated_at
+              knowledge_id, filename, title, file_path, size, content_hash, preview,
+              category, tags, status, owner, visibility, review_notes, published_at, archived_at,
+              created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(filename)
             DO UPDATE SET
               title = excluded.title,
@@ -308,20 +384,61 @@ def upsert_knowledge_file(
               size = excluded.size,
               content_hash = excluded.content_hash,
               preview = excluded.preview,
+              category = excluded.category,
+              tags = excluded.tags,
+              status = excluded.status,
+              owner = excluded.owner,
+              visibility = excluded.visibility,
+              review_notes = excluded.review_notes,
+              published_at = excluded.published_at,
+              archived_at = excluded.archived_at,
               updated_at = excluded.updated_at
             """,
-            (knowledge_id, filename, title, file_path, size, content_hash, preview, created_at, updated_at),
+            (
+                knowledge_id,
+                filename,
+                title,
+                file_path,
+                size,
+                content_hash,
+                preview,
+                effective_category,
+                effective_tags,
+                effective_status,
+                effective_owner,
+                effective_visibility,
+                effective_review_notes,
+                published_at,
+                archived_at,
+                created_at,
+                updated_at,
+            ),
         )
 
-        if create_revision and content_changed:
+        if create_revision and (content_changed or action != "save"):
             conn.execute(
                 """
                 INSERT INTO t_knowledge_file_revision(
-                  revision_id, knowledge_id, filename, title, content, size, content_hash, timestamp
+                  revision_id, knowledge_id, filename, title, content, size, content_hash,
+                  action, status, category, tags, review_notes, timestamp
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (str(uuid.uuid4()), knowledge_id, filename, title, content, size, content_hash, effective_timestamp),
+                (
+                    str(uuid.uuid4()),
+                    knowledge_id,
+                    filename,
+                    title,
+                    content,
+                    size,
+                    content_hash,
+                    action,
+                    effective_status,
+                    effective_category,
+                    effective_tags,
+                    effective_review_notes,
+                    effective_timestamp,
+                ),
             )
 
     return {
@@ -332,6 +449,14 @@ def upsert_knowledge_file(
         "size": size,
         "contentHash": content_hash,
         "preview": preview,
+        "category": effective_category,
+        "tags": json.loads(effective_tags) if effective_tags else [],
+        "status": effective_status,
+        "owner": effective_owner,
+        "visibility": effective_visibility,
+        "reviewNotes": effective_review_notes,
+        "publishedAt": published_at,
+        "archivedAt": archived_at,
         "createdAt": created_at,
         "updatedAt": updated_at,
     }
@@ -341,9 +466,14 @@ def list_knowledge_files() -> List[Dict[str, Any]]:
     with connect() as conn:
         rows = conn.execute(
             """
-            SELECT knowledge_id, filename, title, file_path, size, content_hash, preview, created_at, updated_at
+            SELECT knowledge_id, filename, title, file_path, size, content_hash, preview,
+                   category, tags, status, owner, visibility, review_notes, published_at, archived_at,
+                   created_at, updated_at
             FROM t_knowledge_file
-            ORDER BY updated_at DESC, filename ASC
+            ORDER BY
+              CASE status WHEN 'review' THEN 0 WHEN 'draft' THEN 1 WHEN 'published' THEN 2 ELSE 3 END,
+              updated_at DESC,
+              filename ASC
             """
         ).fetchall()
     return [
@@ -355,11 +485,54 @@ def list_knowledge_files() -> List[Dict[str, Any]]:
             "size": row["size"],
             "contentHash": row["content_hash"],
             "preview": row["preview"],
+            "category": row["category"],
+            "tags": json.loads(row["tags"] or "[]"),
+            "status": row["status"],
+            "owner": row["owner"],
+            "visibility": row["visibility"],
+            "reviewNotes": row["review_notes"],
+            "publishedAt": row["published_at"],
+            "archivedAt": row["archived_at"],
             "createdAt": row["created_at"],
             "updatedAt": row["updated_at"],
         }
         for row in rows
     ]
+
+
+def get_knowledge_file(filename: str) -> Optional[Dict[str, Any]]:
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT knowledge_id, filename, title, file_path, size, content_hash, preview,
+                   category, tags, status, owner, visibility, review_notes, published_at, archived_at,
+                   created_at, updated_at
+            FROM t_knowledge_file
+            WHERE filename = ?
+            """,
+            (filename,),
+        ).fetchone()
+    if not row:
+        return None
+    return {
+        "knowledgeId": row["knowledge_id"],
+        "filename": row["filename"],
+        "title": row["title"],
+        "filePath": row["file_path"],
+        "size": row["size"],
+        "contentHash": row["content_hash"],
+        "preview": row["preview"],
+        "category": row["category"],
+        "tags": json.loads(row["tags"] or "[]"),
+        "status": row["status"],
+        "owner": row["owner"],
+        "visibility": row["visibility"],
+        "reviewNotes": row["review_notes"],
+        "publishedAt": row["published_at"],
+        "archivedAt": row["archived_at"],
+        "createdAt": row["created_at"],
+        "updatedAt": row["updated_at"],
+    }
 
 
 def list_knowledge_revisions(filename: Optional[str] = None, page: int = 1, page_size: int = 20) -> List[Dict[str, Any]]:
@@ -373,7 +546,8 @@ def list_knowledge_revisions(filename: Optional[str] = None, page: int = 1, page
     with connect() as conn:
         rows = conn.execute(
             f"""
-            SELECT revision_id, knowledge_id, filename, title, content, size, content_hash, timestamp
+            SELECT revision_id, knowledge_id, filename, title, content, size, content_hash,
+                   action, status, category, tags, review_notes, timestamp
             FROM t_knowledge_file_revision
             {where}
             ORDER BY timestamp DESC, rowid DESC
@@ -390,10 +564,171 @@ def list_knowledge_revisions(filename: Optional[str] = None, page: int = 1, page
             "content": row["content"],
             "size": row["size"],
             "contentHash": row["content_hash"],
+            "action": row["action"],
+            "status": row["status"],
+            "category": row["category"],
+            "tags": json.loads(row["tags"] or "[]"),
+            "reviewNotes": row["review_notes"],
             "timestamp": row["timestamp"],
         }
         for row in rows
     ]
+
+
+def update_knowledge_status(filename: str, status: str, review_notes: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    allowed_statuses = {"draft", "review", "published", "archived"}
+    if status not in allowed_statuses:
+        raise ValueError(f"Unsupported knowledge status: {status}")
+
+    timestamp = now_text()
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT knowledge_id, filename, title, file_path, size, content_hash, preview,
+                   category, tags, status, owner, visibility, review_notes, published_at, archived_at
+            FROM t_knowledge_file
+            WHERE filename = ?
+            """,
+            (filename,),
+        ).fetchone()
+        if not row:
+            return None
+
+        published_at = row["published_at"]
+        archived_at = row["archived_at"]
+        if status == "published":
+            published_at = timestamp
+            archived_at = None
+        elif status == "archived":
+            archived_at = timestamp
+        else:
+            archived_at = None
+
+        effective_notes = review_notes if review_notes is not None else row["review_notes"]
+        conn.execute(
+            """
+            UPDATE t_knowledge_file
+            SET status = ?, review_notes = ?, published_at = ?, archived_at = ?, updated_at = ?
+            WHERE filename = ?
+            """,
+            (status, effective_notes, published_at, archived_at, timestamp, filename),
+        )
+        conn.execute(
+            """
+            INSERT INTO t_knowledge_file_revision(
+              revision_id, knowledge_id, filename, title, content, size, content_hash,
+              action, status, category, tags, review_notes, timestamp
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(uuid.uuid4()),
+                row["knowledge_id"],
+                row["filename"],
+                row["title"],
+                Path(row["file_path"]).read_text(encoding="utf-8") if Path(row["file_path"]).exists() else "",
+                row["size"],
+                row["content_hash"],
+                f"status:{status}",
+                status,
+                row["category"],
+                row["tags"],
+                effective_notes,
+                timestamp,
+            ),
+        )
+    return get_knowledge_file(filename)
+
+
+def record_knowledge_hits(
+    channel: str,
+    query: str,
+    results: List[Dict[str, Any]],
+    user_id: Optional[str] = None,
+    conversation_id: Optional[str] = None,
+    message_id: Optional[str] = None,
+) -> None:
+    if not results:
+        return
+    timestamp = now_text()
+    with connect() as conn:
+        for item in results:
+            filename = Path(item.get("source", "")).name
+            status = None
+            if filename:
+                row = conn.execute("SELECT status FROM t_knowledge_file WHERE filename = ?", (filename,)).fetchone()
+                status = row["status"] if row else None
+            conn.execute(
+                """
+                INSERT INTO t_knowledge_hit(
+                  hit_id, channel, query, user_id, conversation_id, message_id,
+                  filename, heading, score, status, timestamp
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(uuid.uuid4()),
+                    channel,
+                    query,
+                    user_id,
+                    conversation_id,
+                    message_id,
+                    filename,
+                    item.get("heading"),
+                    float(item.get("score") or 0),
+                    status,
+                    timestamp,
+                ),
+            )
+
+
+def list_knowledge_gaps(page: int = 1, page_size: int = 20) -> List[Dict[str, Any]]:
+    offset = (page - 1) * page_size
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+              feedback.user_id,
+              feedback.conversation_id,
+              feedback.answer_message_id,
+              feedback.query_message_id,
+              feedback.reason,
+              feedback.timestamp,
+              query.content AS query_content,
+              MAX(hit.score) AS best_score,
+              COUNT(hit.hit_id) AS hit_count
+            FROM t_chat_feedback AS feedback
+            LEFT JOIN t_chat_memory AS query
+              ON query.memory_id = feedback.query_message_id
+             AND query.user_id = feedback.user_id
+             AND query.conversation_id = feedback.conversation_id
+            LEFT JOIN t_knowledge_hit AS hit
+              ON hit.query = query.content
+             AND hit.status = 'published'
+            WHERE feedback.feedback = 'unlike'
+            GROUP BY feedback.answer_message_id, feedback.user_id, feedback.conversation_id
+            HAVING hit_count = 0 OR best_score < 0.18
+            ORDER BY feedback.timestamp DESC
+            LIMIT ? OFFSET ?
+            """,
+            (page_size, offset),
+        ).fetchall()
+    result = []
+    for row in rows:
+        result.append(
+            {
+                "userId": row["user_id"],
+                "conversationId": row["conversation_id"],
+                "answerMessageId": row["answer_message_id"],
+                "queryMessageId": row["query_message_id"],
+                "query": row["query_content"] or "",
+                "reason": json.loads(row["reason"]) if row["reason"] else None,
+                "bestScore": round(float(row["best_score"] or 0), 4),
+                "hitCount": row["hit_count"],
+                "timestamp": row["timestamp"],
+            }
+        )
+    return result
 
 
 def _date_range(start_date: str, end_date: str) -> List[str]:

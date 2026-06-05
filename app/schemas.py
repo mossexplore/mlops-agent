@@ -60,6 +60,12 @@ class KnowledgeSaveRequest(BaseModel):
     title: str = Field(min_length=1)
     content: str = Field(min_length=1)
     filename: Optional[str] = None
+    category: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+    status: Optional[str] = None
+    owner: Optional[str] = None
+    visibility: Optional[str] = None
+    reviewNotes: Optional[str] = None
 
 
 class KnowledgeSearchRequest(BaseModel):
@@ -75,6 +81,17 @@ class KnowledgeRevisionListRequest(BaseModel):
 
 class KnowledgeDetailRequest(BaseModel):
     filename: str = Field(min_length=1)
+
+
+class KnowledgeStatusRequest(BaseModel):
+    filename: str = Field(min_length=1)
+    status: str
+    reviewNotes: Optional[str] = None
+
+
+class KnowledgeGapListRequest(BaseModel):
+    page: int = Field(default=1, ge=1)
+    pageSize: int = Field(default=20, ge=1, le=100)
 
 
 class OpsDashboardRequest(BaseModel):

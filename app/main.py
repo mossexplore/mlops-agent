@@ -29,12 +29,15 @@ from .database import (
     init_db,
     list_chats,
     list_conversations,
+    record_knowledge_hits,
     save_feedback,
     upsert_conversation,
 )
 from .knowledge import (
     build_grounded_answer,
+    change_markdown_knowledge_status,
     get_markdown_knowledge_detail,
+    list_markdown_knowledge_gaps,
     list_markdown_knowledge,
     list_markdown_knowledge_revisions,
     retrieve_knowledge,
@@ -47,9 +50,11 @@ from .schemas import (
     ConversationListRequest,
     FeedbackRequest,
     KnowledgeDetailRequest,
+    KnowledgeGapListRequest,
     KnowledgeRevisionListRequest,
     KnowledgeSaveRequest,
     KnowledgeSearchRequest,
+    KnowledgeStatusRequest,
     LoginRequest,
     OpsDashboardRequest,
     api_response,
@@ -149,6 +154,14 @@ async def chat(request: ChatRequest, _user=Depends(current_user)) -> StreamingRe
     answer_message_id = str(uuid.uuid4())
     query_send_time = int(time.time() * 1000)
     knowledge_results = retrieve_knowledge(request.query, top_k=5)
+    record_knowledge_hits(
+        channel="chat",
+        query=request.query,
+        results=knowledge_results,
+        user_id=context.userId,
+        conversation_id=context.conversationId,
+        message_id=query_message_id,
+    )
     if should_use_local_knowledge(request.query, knowledge_results):
         answer = build_grounded_answer(request.query, knowledge_results)
     else:
@@ -210,7 +223,17 @@ def chat_list(request: ChatListRequest, _user=Depends(current_user)):
 
 @app.post("/agent/v1/knowledge/save")
 def knowledge_save(request: KnowledgeSaveRequest, _user=Depends(require_admin)):
-    data = write_markdown_knowledge(request.title, request.content, request.filename)
+    data = write_markdown_knowledge(
+        title=request.title,
+        content=request.content,
+        filename=request.filename,
+        category=request.category,
+        tags=request.tags,
+        status=request.status,
+        owner=request.owner,
+        visibility=request.visibility,
+        review_notes=request.reviewNotes,
+    )
     return api_response(data=data)
 
 
@@ -229,12 +252,27 @@ def knowledge_detail(request: KnowledgeDetailRequest, _user=Depends(require_admi
 
 @app.post("/agent/v1/knowledge/search")
 def knowledge_search(request: KnowledgeSearchRequest, _user=Depends(require_admin)):
-    return api_response(data=retrieve_knowledge(request.query, request.topK))
+    results = retrieve_knowledge(request.query, request.topK)
+    record_knowledge_hits(channel="search", query=request.query, results=results)
+    return api_response(data=results)
 
 
 @app.post("/agent/v1/knowledge/revision/list")
 def knowledge_revision_list(request: KnowledgeRevisionListRequest, _user=Depends(require_admin)):
     return api_response(data=list_markdown_knowledge_revisions(request.filename, request.page, request.pageSize))
+
+
+@app.post("/agent/v1/knowledge/status")
+def knowledge_status(request: KnowledgeStatusRequest, _user=Depends(require_admin)):
+    try:
+        return api_response(data=change_markdown_knowledge_status(request.filename, request.status, request.reviewNotes))
+    except FileNotFoundError as exc:
+        return api_response(data=None, code=404, des=str(exc))
+
+
+@app.post("/agent/v1/knowledge/gap/list")
+def knowledge_gap_list(request: KnowledgeGapListRequest, _user=Depends(require_admin)):
+    return api_response(data=list_markdown_knowledge_gaps(request.page, request.pageSize))
 
 
 @app.post("/agent/v1/ops/dashboard")

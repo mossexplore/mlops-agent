@@ -249,6 +249,10 @@ def test_knowledge_save_search_and_chat_grounding():
         json={
             "title": "登录失败排查",
             "filename": "login-runbook.md",
+            "category": "登录认证",
+            "tags": ["SSO", "登录"],
+            "owner": "平台运维",
+            "visibility": "internal",
             "content": "# 登录问题\n\n## 登录失败排查\n\n登录失败时先检查账号是否被禁用，再检查密码错误次数和 SSO 服务状态。",
         },
     )
@@ -261,6 +265,9 @@ def test_knowledge_save_search_and_chat_grounding():
     assert saved["knowledgeId"]
     assert saved["contentHash"]
     assert saved["updatedAt"]
+    assert saved["status"] == "published"
+    assert saved["category"] == "登录认证"
+    assert saved["tags"] == ["SSO", "登录"]
 
     first_updated_at = saved["updatedAt"]
     time.sleep(1.1)
@@ -285,12 +292,33 @@ def test_knowledge_save_search_and_chat_grounding():
     detail = detail_response.json()["result"]["data"]
     assert detail["filename"] == "login-runbook.md"
     assert "SSO 服务状态" in detail["content"]
+    assert detail["owner"] == "平台运维"
+
+    archive_response = client.post(
+        "/agent/v1/knowledge/status",
+        json={"filename": "login-runbook.md", "status": "archived", "reviewNotes": "临时下线验证"},
+    )
+    assert archive_response.json()["result"]["data"]["status"] == "archived"
+
+    archived_search_response = client.post(
+        "/agent/v1/knowledge/search",
+        json={"query": "SSO 服务状态", "topK": 3},
+    )
+    assert archived_search_response.json()["result"]["data"] == []
+
+    publish_response = client.post(
+        "/agent/v1/knowledge/status",
+        json={"filename": "login-runbook.md", "status": "published", "reviewNotes": "审核通过"},
+    )
+    assert publish_response.json()["result"]["data"]["status"] == "published"
 
     update_response = client.post(
         "/agent/v1/knowledge/save",
         json={
             "title": "登录失败排查",
             "filename": "login-runbook.md",
+            "category": "登录认证",
+            "tags": ["SSO", "登录", "认证日志"],
             "content": "# 登录问题\n\n## 登录失败排查\n\n登录失败时先检查账号状态，并记录认证日志错误码。",
         },
     )
@@ -312,6 +340,8 @@ def test_knowledge_save_search_and_chat_grounding():
     updated_revisions = updated_revision_response.json()["result"]["data"]
     assert len(updated_revisions) >= 2
     assert "认证日志错误码" in updated_revisions[0]["content"]
+    assert updated_revisions[0]["category"] == "登录认证"
+    assert "认证日志" in updated_revisions[0]["tags"]
 
     search_response = client.post(
         "/agent/v1/knowledge/search",
@@ -340,3 +370,26 @@ def test_knowledge_save_search_and_chat_grounding():
 
     assert "根据本地知识库检索结果" in answer
     assert "login-runbook.md" in answer
+
+    unlike_response = client.post(
+        "/agent/v1/assistant/feedback",
+        json={
+            "feedback": "unlike",
+            "reason": {
+                "feedbackInfo": "需要补充更多步骤",
+                "feedbackInfoTypes": ["缺少操作步骤"],
+            },
+            "context": {
+                "userId": "l0123456",
+                "conversationId": "conv-test-knowledge",
+                "messageId": "missing-answer-id",
+                "queryMessageId": "missing-query-id",
+            },
+        },
+    )
+    assert unlike_response.json()["result"]["code"] == 0
+
+    gap_response = client.post("/agent/v1/knowledge/gap/list", json={"page": 1, "pageSize": 10})
+    gaps = gap_response.json()["result"]["data"]
+    assert gaps
+    assert gaps[0]["reason"]["feedbackInfo"] == "需要补充更多步骤"

@@ -15,6 +15,9 @@
 - `POST /agent/v1/knowledge/save`：保存本地 Markdown 知识，并自动重建检索索引。
 - `POST /agent/v1/knowledge/list`：查询本地知识文件列表。
 - `POST /agent/v1/knowledge/search`：检索本地 Markdown 知识片段。
+- `POST /agent/v1/knowledge/status`：切换知识生命周期状态，支持草稿、待审核、已发布、已归档。
+- `POST /agent/v1/knowledge/revision/list`：查询知识内容和状态变更版本历史。
+- `POST /agent/v1/knowledge/gap/list`：查询由点踩反馈暴露出的知识缺口。
 - `POST /agent/v1/ops/dashboard`：查询运营看板聚合数据，包括日活、提问、会话、点赞、点踩和点踩原因。
 - `GET /`：Web 聊天工作台，支持流式显示、历史会话和反馈。
 - `GET /knowledge`：本地 Markdown 知识库管理页面。
@@ -127,18 +130,27 @@ skills/local_markdown_knowledge/knowledge/*.md
 skills/local_markdown_knowledge/indexes/
 ```
 
-当用户问题显式包含“知识库 / 文档 / 手册 / 内部”等关键词，或检索分数足够高时，聊天接口会优先基于本地 Markdown 检索结果回答，并附来源文件与标题。
+知识库支持治理元数据：
+
+- 分类：例如登录认证、资源问题、训练任务。
+- 标签：用于快速筛选、命中解释和后续评测集沉淀。
+- 状态：`draft` 草稿、`review` 待审核、`published` 已发布、`archived` 已归档。
+- 负责人、可见性、审核备注。
+
+当用户问题显式包含“知识库 / 文档 / 手册 / 内部”等关键词，或检索分数足够高时，聊天接口会优先基于本地 Markdown 检索结果回答，并附来源文件与标题。为了避免草稿或过期知识污染回答，聊天和检索测试只使用 `published` 状态的知识。
 
 知识库历史数据会记录到 SQLite：
 
 - `t_knowledge_file`：当前 Markdown 文件元信息，包括文件名、标题、路径、大小、内容 hash、预览、创建时间、更新时间。
-- `t_knowledge_file_revision`：通过页面保存/更新知识时生成的历史版本，包括 revision id、知识文件 id、标题、完整内容、大小、内容 hash、保存时间。
+- `t_knowledge_file_revision`：通过页面保存/更新/切换状态时生成的历史版本，包括 revision id、知识文件 id、标题、完整内容、大小、内容 hash、状态、分类、标签、审核备注和保存时间。
+- `t_knowledge_hit`：记录聊天或检索测试中的知识命中，用于后续分析知识命中率和点踩后的知识缺口。
 
 可用下面命令查询：
 
 ```bash
 sqlite3 data/agent.db "SELECT filename,title,size,updated_at FROM t_knowledge_file ORDER BY updated_at DESC;"
 sqlite3 data/agent.db "SELECT filename,title,size,timestamp FROM t_knowledge_file_revision ORDER BY timestamp DESC;"
+sqlite3 data/agent.db "SELECT channel,query,filename,score,timestamp FROM t_knowledge_hit ORDER BY timestamp DESC LIMIT 20;"
 ```
 
 ## 接口调试示例
