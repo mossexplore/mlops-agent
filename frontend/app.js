@@ -124,12 +124,170 @@ function setFeedbackState(messageNode, feedback) {
   }
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function renderInlineMarkdown(text) {
+  const placeholders = [];
+  let escaped = escapeHtml(text);
+  escaped = escaped.replace(/`([^`]+)`/g, (_, code) => {
+    const token = `@@CODE${placeholders.length}@@`;
+    placeholders.push(`<code>${code}</code>`);
+    return token;
+  });
+  escaped = escaped
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[^\w])__([^_\n]+)__([^\w]|$)/g, "$1<strong>$2</strong>$3")
+    .replace(/\*([^*\n]+)\*/g, "<em>$1</em>")
+    .replace(/(^|[^\w])_([^_\n]+)_([^\w]|$)/g, "$1<em>$2</em>$3")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+  placeholders.forEach((html, index) => {
+    escaped = escaped.replace(`@@CODE${index}@@`, html);
+  });
+  return escaped;
+}
+
+function renderMarkdown(markdown) {
+  const lines = String(markdown ?? "").replace(/\r\n/g, "\n").split("\n");
+  const html = [];
+  let paragraph = [];
+  let listType = null;
+  let inCode = false;
+  let codeLines = [];
+
+  const closeParagraph = () => {
+    if (!paragraph.length) return;
+    html.push(`<p>${renderInlineMarkdown(paragraph.join(" "))}</p>`);
+    paragraph = [];
+  };
+
+  const closeList = () => {
+    if (!listType) return;
+    html.push(`</${listType}>`);
+    listType = null;
+  };
+
+  const closeCode = () => {
+    html.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+    codeLines = [];
+    inCode = false;
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\s+$/, "");
+    const trimmed = line.trim();
+
+    if (trimmed.startsWith("```")) {
+      closeParagraph();
+      closeList();
+      if (inCode) {
+        closeCode();
+      } else {
+        inCode = true;
+        codeLines = [];
+      }
+      continue;
+    }
+
+    if (inCode) {
+      codeLines.push(rawLine);
+      continue;
+    }
+
+    if (!trimmed) {
+      closeParagraph();
+      closeList();
+      continue;
+    }
+
+    const heading = /^(#{1,6})\s+(.+)$/.exec(trimmed);
+    if (heading) {
+      closeParagraph();
+      closeList();
+      const level = heading[1].length;
+      html.push(`<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`);
+      continue;
+    }
+
+    const quote = /^>\s?(.+)$/.exec(trimmed);
+    if (quote) {
+      closeParagraph();
+      closeList();
+      html.push(`<blockquote>${renderInlineMarkdown(quote[1])}</blockquote>`);
+      continue;
+    }
+
+    const bullet = /^[-*+]\s+(.+)$/.exec(trimmed);
+    const ordered = /^(\d+)[.)]\s+(.+)$/.exec(trimmed);
+    if (bullet || ordered) {
+      closeParagraph();
+      const nextListType = bullet ? "ul" : "ol";
+      const listContent = bullet ? bullet[1] : ordered[2];
+      if (listType !== nextListType) {
+        closeList();
+        html.push(`<${nextListType}>`);
+        listType = nextListType;
+      }
+      html.push(`<li>${renderInlineMarkdown(listContent)}</li>`);
+      continue;
+    }
+
+    closeList();
+    paragraph.push(trimmed);
+  }
+
+  if (inCode) closeCode();
+  closeParagraph();
+  closeList();
+  return html.join("");
+}
+
+function setMessageContent(contentNode, type, content) {
+  if (type === "assistant") {
+    contentNode.innerHTML = renderMarkdown(content);
+  } else {
+    contentNode.textContent = content;
+  }
+}
+
+function renderTracePanel(traceId, diagnosticState = null) {
+  if (!traceId && !diagnosticState) return "";
+  const step = diagnosticState?.currentStep || "诊断 trace 已记录";
+  const risk = diagnosticState?.riskLevel || "unknown";
+  const questions = diagnosticState?.openQuestions || [];
+  return `
+    <section class="diagnostic-trace">
+      <div class="trace-head">
+        <span>Explainable Diagnosis</span>
+        ${traceId ? `<button type="button" data-trace-detail="${escapeHtml(traceId)}">Trace ${escapeHtml(traceId.slice(0, 8))}</button>` : ""}
+      </div>
+      <div class="trace-state">
+        <strong>${escapeHtml(step)}</strong>
+        <span class="risk ${escapeHtml(risk)}">${escapeHtml(risk)}</span>
+      </div>
+      ${
+        questions.length
+          ? `<ul>${questions.slice(0, 3).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+          : ""
+      }
+      <div class="trace-spans" hidden></div>
+    </section>
+  `;
+}
+
 function appendMessage(type, content, options = {}) {
   els.emptyState?.remove();
   const node = document.createElement("article");
   node.className = `message ${type}`;
   node.dataset.messageId = options.messageId || "";
   node.dataset.queryMessageId = options.queryMessageId || "";
+  node.dataset.traceId = options.traceId || "";
 
   const meta = document.createElement("div");
   meta.className = "message-meta";
@@ -141,10 +299,16 @@ function appendMessage(type, content, options = {}) {
 
   const contentNode = document.createElement("div");
   contentNode.className = "message-content";
-  contentNode.textContent = content;
+  setMessageContent(contentNode, type, content);
   node.appendChild(contentNode);
 
   if (type === "assistant" && options.messageId) {
+    const traceWrap = document.createElement("div");
+    traceWrap.innerHTML = renderTracePanel(options.traceId, options.diagnosticState);
+    if (traceWrap.firstElementChild) {
+      node.appendChild(traceWrap.firstElementChild);
+    }
+
     const feedback = document.createElement("div");
     feedback.className = "feedback";
     feedback.innerHTML = `
@@ -158,6 +322,29 @@ function appendMessage(type, content, options = {}) {
   els.messages.appendChild(node);
   els.messages.scrollTop = els.messages.scrollHeight;
   return { node, contentNode };
+}
+
+function updateTracePanel(messageNode, traceId, diagnosticState) {
+  if (!messageNode || (!traceId && !diagnosticState)) return;
+  messageNode.dataset.traceId = traceId || messageNode.dataset.traceId || "";
+  let panel = messageNode.querySelector(".diagnostic-trace");
+  if (!panel) {
+    const wrap = document.createElement("div");
+    wrap.innerHTML = renderTracePanel(traceId || messageNode.dataset.traceId, diagnosticState);
+    panel = wrap.firstElementChild;
+    if (panel) {
+      const feedback = messageNode.querySelector(".feedback");
+      messageNode.insertBefore(panel, feedback || null);
+    }
+    return;
+  }
+  const state = panel.querySelector(".trace-state strong");
+  const risk = panel.querySelector(".risk");
+  if (state && diagnosticState?.currentStep) state.textContent = diagnosticState.currentStep;
+  if (risk && diagnosticState?.riskLevel) {
+    risk.textContent = diagnosticState.riskLevel;
+    risk.className = `risk ${diagnosticState.riskLevel}`;
+  }
 }
 
 function resetConversation() {
@@ -271,10 +458,13 @@ async function submitChat(event) {
           assistant = appendMessage("assistant", "", {
             messageId: payload.messageId,
             queryMessageId: payload.queryMessageId,
+            traceId: payload.traceId,
+            diagnosticState: payload.diagnosticState,
           });
         }
         assistant.node.dataset.queryMessageId = payload.queryMessageId;
-        assistant.contentNode.textContent = fullText;
+        updateTracePanel(assistant.node, payload.traceId, payload.diagnosticState);
+        setMessageContent(assistant.contentNode, "assistant", fullText);
         els.messages.scrollTop = els.messages.scrollHeight;
       }
     }
@@ -333,6 +523,7 @@ async function loadConversation(conversationId) {
     appendMessage(item.type, item.content, {
       messageId: item.messageId,
       queryMessageId: item.queryMessageId,
+      traceId: item.traceId,
       timestamp: item.timestamp,
       feedbackInfo: item.feedbackInfo,
     });
@@ -351,6 +542,44 @@ els.newConversation.addEventListener("click", resetConversation);
 els.loadHistory.addEventListener("click", loadHistory);
 els.historySearch.addEventListener("input", renderHistory);
 els.messages.addEventListener("click", async (event) => {
+  const traceButton = event.target.closest("button[data-trace-detail]");
+  if (traceButton) {
+    const panel = traceButton.closest(".diagnostic-trace");
+    const spans = panel?.querySelector(".trace-spans");
+    if (!spans) return;
+    if (!spans.hidden) {
+      spans.hidden = true;
+      return;
+    }
+    spans.hidden = false;
+    spans.innerHTML = `<div class="trace-loading">读取 trace...</div>`;
+    try {
+      const response = await fetch("/agent/v1/assistant/trace/detail", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ traceId: traceButton.dataset.traceDetail }),
+      });
+      const payload = await response.json();
+      const trace = payload.result.data;
+      if (!response.ok || payload.result.code !== 0 || !trace) {
+        throw new Error(payload.result.des || "Trace 读取失败");
+      }
+      spans.innerHTML = trace.spans
+        .map(
+          (span) => `
+            <article>
+              <strong>${escapeHtml(span.name)}</strong>
+              <span>${escapeHtml(span.kind)} · ${span.durationMs}ms · ${escapeHtml(span.status)}</span>
+            </article>
+          `,
+        )
+        .join("");
+    } catch (error) {
+      spans.innerHTML = `<div class="trace-loading">${escapeHtml(error.message || "Trace 读取失败")}</div>`;
+    }
+    return;
+  }
+
   const button = event.target.closest("button[data-feedback]");
   if (!button) return;
   const messageNode = button.closest(".message");

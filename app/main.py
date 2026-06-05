@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from .agent import build_answer, stream_chunks
+from .agent import stream_chunks
 from .auth import (
     authenticate,
     clear_session_cookie,
@@ -26,15 +26,19 @@ from .database import (
     add_chat,
     check_db,
     get_ops_dashboard,
+    get_agent_trace,
+    get_diagnostic_state,
     init_db,
     list_chats,
     list_conversations,
     record_knowledge_hits,
+    save_agent_trace,
     save_feedback,
     upsert_conversation,
+    upsert_diagnostic_state,
 )
+from .diagnostics import run_diagnostic_agent
 from .knowledge import (
-    build_grounded_answer,
     change_markdown_knowledge_status,
     get_markdown_knowledge_detail,
     list_markdown_knowledge_gaps,
@@ -49,6 +53,8 @@ from .schemas import (
     ChatRequest,
     ConversationListRequest,
     FeedbackRequest,
+    TraceDetailRequest,
+    DiagnosticStateRequest,
     KnowledgeDetailRequest,
     KnowledgeGapListRequest,
     KnowledgeRevisionListRequest,
@@ -153,6 +159,7 @@ async def chat(request: ChatRequest, _user=Depends(current_user)) -> StreamingRe
     query_message_id = str(uuid.uuid4())
     answer_message_id = str(uuid.uuid4())
     query_send_time = int(time.time() * 1000)
+    previous_state = get_diagnostic_state(context.userId, context.conversationId)
     knowledge_results = retrieve_knowledge(request.query, top_k=5)
     record_knowledge_hits(
         channel="chat",
@@ -162,10 +169,27 @@ async def chat(request: ChatRequest, _user=Depends(current_user)) -> StreamingRe
         conversation_id=context.conversationId,
         message_id=query_message_id,
     )
-    if should_use_local_knowledge(request.query, knowledge_results):
-        answer = build_grounded_answer(request.query, knowledge_results)
-    else:
-        answer = build_answer(request.query, request.needDeepThinking)
+    diagnostic = run_diagnostic_agent(
+        query=request.query,
+        context=context,
+        query_message_id=query_message_id,
+        answer_message_id=answer_message_id,
+        knowledge_results=knowledge_results if should_use_local_knowledge(request.query, knowledge_results) else [],
+        previous_state=previous_state,
+        need_deep_thinking=request.needDeepThinking,
+    )
+    answer = diagnostic["answer"]
+    trace = diagnostic["trace"]
+    save_agent_trace(trace, diagnostic["spans"])
+    upsert_diagnostic_state(
+        user_id=context.userId,
+        conversation_id=context.conversationId,
+        current_step=diagnostic["diagnosticState"]["currentStep"],
+        summary=diagnostic["diagnosticState"]["summary"],
+        facts=diagnostic["diagnosticState"]["facts"],
+        open_questions=diagnostic["diagnosticState"]["openQuestions"],
+        risk_level=diagnostic["diagnosticState"]["riskLevel"],
+    )
 
     upsert_conversation(
         user_id=context.userId,
@@ -186,14 +210,29 @@ async def chat(request: ChatRequest, _user=Depends(current_user)) -> StreamingRe
                 "conversationId": context.conversationId,
                 "messageId": answer_message_id,
                 "queryMessageId": query_message_id,
+                "traceId": trace["traceId"],
+                "diagnosticState": diagnostic["diagnosticState"],
                 "messageSendTime": int(time.time() * 1000),
                 "querySendTime": query_send_time,
             }
             yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
             await asyncio.sleep(0.035)
-        add_chat(answer_message_id, context.userId, context.conversationId, "assistant", full_content)
+        add_chat(answer_message_id, context.userId, context.conversationId, "assistant", full_content, trace_id=trace["traceId"])
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.post("/agent/v1/assistant/trace/detail")
+def trace_detail(request: TraceDetailRequest, _user=Depends(current_user)):
+    trace = get_agent_trace(request.traceId)
+    if not trace:
+        return api_response(data=None, code=404, des="Trace not found")
+    return api_response(data=trace)
+
+
+@app.post("/agent/v1/assistant/diagnostic/state")
+def diagnostic_state(request: DiagnosticStateRequest, _user=Depends(current_user)):
+    return api_response(data=get_diagnostic_state(request.userId, request.conversationId))
 
 
 @app.post("/agent/v1/assistant/feedback")

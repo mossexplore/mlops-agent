@@ -64,6 +64,8 @@ def test_chat_stream_feedback_and_history():
         chunks = []
         message_id = None
         query_message_id = None
+        trace_id = None
+        diagnostic_state = None
         for line in response.iter_lines():
             if not line or not line.startswith("data: "):
                 continue
@@ -71,10 +73,31 @@ def test_chat_stream_feedback_and_history():
             chunks.append(payload["content"])
             message_id = payload["messageId"]
             query_message_id = payload["queryMessageId"]
+            trace_id = payload["traceId"]
+            diagnostic_state = payload["diagnosticState"]
 
-    assert "内存不足" in "".join(chunks)
+    answer_text = "".join(chunks)
+    assert "可解释诊断链路" in answer_text
+    assert "根因候选" in answer_text
+    assert "风险提示" in answer_text
     assert message_id
     assert query_message_id
+    assert trace_id
+    assert diagnostic_state["currentStep"]
+
+    trace_response = client.post("/agent/v1/assistant/trace/detail", json={"traceId": trace_id})
+    trace = trace_response.json()["result"]["data"]
+    assert trace["traceId"] == trace_id
+    assert trace["diagnosticState"]["currentStep"] == diagnostic_state["currentStep"]
+    span_kinds = {span["kind"] for span in trace["spans"]}
+    assert {"agent", "retriever", "guardrail", "tool", "llm"}.issubset(span_kinds)
+
+    state_response = client.post(
+        "/agent/v1/assistant/diagnostic/state",
+        json={"userId": "l0123456", "conversationId": conversation_id},
+    )
+    state = state_response.json()["result"]["data"]
+    assert state["currentStep"] == diagnostic_state["currentStep"]
 
     feedback = {
         "feedback": "unlike",
@@ -107,6 +130,7 @@ def test_chat_stream_feedback_and_history():
     assert [item["type"] for item in chats] == ["user", "assistant"]
     assert chats[1]["feedbackInfo"]["feedback"] == "unlike"
     assert chats[1]["queryMessageId"] == query_message_id
+    assert chats[1]["traceId"] == trace_id
 
 
 def test_feedback_without_query_message_id_is_recorded_in_database():

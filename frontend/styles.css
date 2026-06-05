@@ -553,12 +553,208 @@ textarea:focus {
   border: 1px solid rgba(129, 140, 248, 0.22);
   background: linear-gradient(135deg, rgba(99, 102, 241, 0.34), rgba(168, 85, 247, 0.3));
   color: #ffffff;
+  white-space: pre-wrap;
 }
 
 .assistant .message-content {
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.055);
   backdrop-filter: blur(14px);
+  white-space: normal;
+}
+
+.assistant .message-content h1,
+.assistant .message-content h2,
+.assistant .message-content h3,
+.assistant .message-content h4,
+.assistant .message-content h5,
+.assistant .message-content h6 {
+  margin: 0.95em 0 0.45em;
+  color: #ffffff;
+  line-height: 1.32;
+  font-weight: 850;
+}
+
+.assistant .message-content h1:first-child,
+.assistant .message-content h2:first-child,
+.assistant .message-content h3:first-child,
+.assistant .message-content h4:first-child {
+  margin-top: 0;
+}
+
+.assistant .message-content h1 { font-size: 24px; }
+.assistant .message-content h2 { font-size: 21px; }
+.assistant .message-content h3 { font-size: 18px; }
+.assistant .message-content h4 { font-size: 15px; color: #c7d2fe; }
+.assistant .message-content h5,
+.assistant .message-content h6 { font-size: 13px; color: #bfdbfe; }
+
+.assistant .message-content p {
+  margin: 0.45em 0;
+}
+
+.assistant .message-content ul,
+.assistant .message-content ol {
+  margin: 0.45em 0 0.8em;
+  padding-left: 1.35em;
+}
+
+.assistant .message-content li {
+  margin: 0.24em 0;
+  padding-left: 0.1em;
+}
+
+.assistant .message-content strong {
+  color: #ffffff;
+  font-weight: 800;
+}
+
+.assistant .message-content em {
+  color: #dbeafe;
+}
+
+.assistant .message-content code {
+  border: 1px solid rgba(129, 140, 248, 0.18);
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.72);
+  padding: 0.12em 0.35em;
+  color: #a7f3d0;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.9em;
+}
+
+.assistant .message-content pre {
+  margin: 0.8em 0;
+  overflow: auto;
+  border: 1px solid rgba(129, 140, 248, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 13, 28, 0.82);
+  padding: 12px;
+}
+
+.assistant .message-content pre code {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  white-space: pre;
+}
+
+.assistant .message-content blockquote {
+  margin: 0.75em 0;
+  border-left: 3px solid rgba(129, 140, 248, 0.58);
+  padding: 0.2em 0 0.2em 0.85em;
+  color: #cbd5e1;
+  background: rgba(129, 140, 248, 0.06);
+}
+
+.assistant .message-content a {
+  color: #93c5fd;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(147, 197, 253, 0.36);
+}
+
+.diagnostic-trace {
+  width: min(720px, 100%);
+  border: 1px solid rgba(129, 140, 248, 0.16);
+  border-radius: 8px;
+  background: rgba(12, 18, 38, 0.58);
+  padding: 12px;
+  color: #cbd5e1;
+}
+
+.trace-head,
+.trace-state {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.trace-head span {
+  color: #8dd9d0;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.trace-head button {
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid rgba(129, 140, 248, 0.22);
+  background: rgba(129, 140, 248, 0.1);
+  color: #c7d2fe;
+  font-size: 11px;
+}
+
+.trace-head button:hover {
+  background: rgba(129, 140, 248, 0.2);
+}
+
+.trace-state {
+  margin-top: 8px;
+}
+
+.trace-state strong {
+  color: #f8fafc;
+  font-size: 13px;
+}
+
+.risk {
+  border-radius: 8px;
+  padding: 4px 8px;
+  background: rgba(148, 163, 184, 0.14);
+  color: #cbd5e1;
+  font-size: 11px;
+}
+
+.risk.low {
+  background: rgba(45, 212, 191, 0.13);
+  color: #8dd9d0;
+}
+
+.risk.medium {
+  background: rgba(251, 191, 36, 0.14);
+  color: #fde68a;
+}
+
+.risk.high {
+  background: rgba(251, 113, 133, 0.14);
+  color: #fecdd3;
+}
+
+.diagnostic-trace ul {
+  margin: 9px 0 0;
+  padding-left: 18px;
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.trace-spans {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.trace-spans article,
+.trace-loading {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 8px 9px;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 12px;
+}
+
+.trace-spans article strong {
+  color: #e5e7eb;
+}
+
+.trace-spans article span,
+.trace-loading {
+  color: #94a3b8;
 }
 
 .feedback {

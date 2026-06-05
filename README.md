@@ -12,6 +12,8 @@
 - `POST /agent/v1/assistant/feedback`：对 Agent 回复点赞、点踩或置为 `NONE`，点踩可提交原因。
 - `POST /agent/v1/assistant/conversation/list`：查询用户历史会话列表。
 - `POST /agent/v1/assistant/chat/list`：查询某个会话下的全部对话记录。
+- `POST /agent/v1/assistant/trace/detail`：查询一次 Agent 回复的 trace 和 span 明细。
+- `POST /agent/v1/assistant/diagnostic/state`：查询某个会话的多轮诊断状态。
 - `POST /agent/v1/knowledge/save`：保存本地 Markdown 知识，并自动重建检索索引。
 - `POST /agent/v1/knowledge/list`：查询本地知识文件列表。
 - `POST /agent/v1/knowledge/search`：检索本地 Markdown 知识片段。
@@ -153,6 +155,35 @@ sqlite3 data/agent.db "SELECT filename,title,size,timestamp FROM t_knowledge_fil
 sqlite3 data/agent.db "SELECT channel,query,filename,score,timestamp FROM t_knowledge_hit ORDER BY timestamp DESC LIMIT 20;"
 ```
 
+## 可解释诊断 Agent
+
+聊天接口不再只返回一段问答文本，而是把每次诊断拆成稳定链路：
+
+- 问题识别：提取错误码、资源、日志、调度、镜像等信号。
+- 场景判断：结合用户选择的来源、场景和上一轮诊断状态判断问题类型。
+- 知识检索：只使用已发布知识片段，避免草稿污染回答。
+- 工具调用计划：预留任务状态、日志、资源指标、镜像版本、调度事件等工具位；未接入真实平台前只记录意图，不编造平台数据。
+- 根因候选：按证据给出多个候选原因和置信度。
+- 建议动作：先验证、再处理，高风险动作需要人工确认。
+- 风险提示：缺少证据时明确提示不确定性。
+- 多轮状态：记录当前排查步骤、已确认事实、下一步需要补充的信息。
+
+实现上借鉴 OpenAI Agents SDK 的 trace/span/guardrail 思路、Phoenix 的 OpenTelemetry 风格可观测链路，以及 LangSmith 的 run/span metadata 结构。本项目先落地为本地 SQLite，后续可再导出到 Phoenix、LangSmith 或 OpenTelemetry collector。
+
+诊断相关表：
+
+- `t_agent_trace`：一次 Agent 回复的端到端 trace，包含输入、输出、guardrails、诊断状态、耗时和错误。
+- `t_agent_span`：trace 内每个步骤的 span，例如 `problem_identification`、`knowledge_retrieval`、`guardrails`、`tool_planning`、`response_generation`。
+- `t_diagnostic_state`：会话级多轮诊断状态。
+
+可用下面命令查询：
+
+```bash
+sqlite3 data/agent.db "SELECT trace_id,query,status,total_ms,created_at FROM t_agent_trace ORDER BY created_at DESC LIMIT 10;"
+sqlite3 data/agent.db "SELECT name,kind,status,duration_ms FROM t_agent_span WHERE trace_id='替换为traceId' ORDER BY started_at;"
+sqlite3 data/agent.db "SELECT user_id,conversation_id,current_step,risk_level,updated_at FROM t_diagnostic_state ORDER BY updated_at DESC LIMIT 10;"
+```
+
 ## 接口调试示例
 
 ### 流式聊天
@@ -191,6 +222,14 @@ curl -X POST http://127.0.0.1:8000/agent/v1/assistant/feedback \
       "messageId": "替换为chat接口返回的messageId"
     }
   }'
+```
+
+### Trace 明细
+
+```bash
+curl -X POST http://127.0.0.1:8000/agent/v1/assistant/trace/detail \
+  -H "Content-Type: application/json" \
+  -d '{"traceId":"替换为chat接口返回的traceId"}'
 ```
 
 ## 测试

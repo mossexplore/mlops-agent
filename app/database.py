@@ -130,6 +130,52 @@ def init_db(db_path: Optional[Path] = None) -> None:
               timestamp TEXT,
               PRIMARY KEY (hit_id)
             );
+
+            CREATE TABLE IF NOT EXISTS t_agent_trace (
+              trace_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              conversation_id TEXT NOT NULL,
+              query_message_id TEXT NOT NULL,
+              answer_message_id TEXT NOT NULL,
+              query TEXT NOT NULL,
+              answer TEXT,
+              status TEXT NOT NULL,
+              guardrails TEXT,
+              diagnostic_state TEXT,
+              total_ms INTEGER NOT NULL DEFAULT 0,
+              error TEXT,
+              created_at TEXT,
+              updated_at TEXT,
+              PRIMARY KEY (trace_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS t_agent_span (
+              span_id TEXT NOT NULL,
+              trace_id TEXT NOT NULL,
+              parent_span_id TEXT,
+              name TEXT NOT NULL,
+              kind TEXT NOT NULL,
+              input TEXT,
+              output TEXT,
+              status TEXT NOT NULL,
+              duration_ms INTEGER NOT NULL DEFAULT 0,
+              error TEXT,
+              started_at TEXT,
+              ended_at TEXT,
+              PRIMARY KEY (span_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS t_diagnostic_state (
+              user_id TEXT NOT NULL,
+              conversation_id TEXT NOT NULL,
+              current_step TEXT NOT NULL,
+              summary TEXT,
+              facts TEXT NOT NULL DEFAULT '[]',
+              open_questions TEXT NOT NULL DEFAULT '[]',
+              risk_level TEXT NOT NULL DEFAULT 'low',
+              updated_at TEXT,
+              PRIMARY KEY (user_id, conversation_id)
+            );
             """
         )
         _ensure_column(conn, "t_knowledge_file", "category", "TEXT NOT NULL DEFAULT '未分类'")
@@ -145,6 +191,7 @@ def init_db(db_path: Optional[Path] = None) -> None:
         _ensure_column(conn, "t_knowledge_file_revision", "category", "TEXT NOT NULL DEFAULT '未分类'")
         _ensure_column(conn, "t_knowledge_file_revision", "tags", "TEXT NOT NULL DEFAULT '[]'")
         _ensure_column(conn, "t_knowledge_file_revision", "review_notes", "TEXT")
+        _ensure_column(conn, "t_chat_memory", "trace_id", "TEXT")
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
@@ -183,14 +230,21 @@ def upsert_conversation(user_id: str, conversation_id: str, title: str, service:
         )
 
 
-def add_chat(memory_id: str, user_id: str, conversation_id: str, message_type: str, content: str) -> None:
+def add_chat(
+    memory_id: str,
+    user_id: str,
+    conversation_id: str,
+    message_type: str,
+    content: str,
+    trace_id: Optional[str] = None,
+) -> None:
     with connect() as conn:
         conn.execute(
             """
-            INSERT OR REPLACE INTO t_chat_memory(memory_id, user_id, conversation_id, type, content, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO t_chat_memory(memory_id, user_id, conversation_id, type, content, timestamp, trace_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (memory_id, user_id, conversation_id, message_type, content, now_text()),
+            (memory_id, user_id, conversation_id, message_type, content, now_text(), trace_id),
         )
 
 
@@ -279,7 +333,7 @@ def list_chats(user_id: str, conversation_id: str, page: int, page_size: int) ->
             """
             SELECT memory.memory_id AS messageId, memory.user_id AS userId,
                    memory.conversation_id AS conversationId, memory.type,
-                   memory.content, memory.timestamp,
+                   memory.content, memory.timestamp, memory.trace_id AS traceId,
                    feedback.feedback, feedback.reason,
                    feedback.query_message_id AS queryMessageId,
                    feedback.timestamp AS feedbackTimestamp
@@ -310,6 +364,7 @@ def list_chats(user_id: str, conversation_id: str, page: int, page_size: int) ->
                 "type": row["type"],
                 "content": row["content"],
                 "timestamp": row["timestamp"],
+                "traceId": row["traceId"],
                 "feedbackInfo": {
                     "feedback": row["feedback"],
                     "reason": reason,
@@ -318,6 +373,194 @@ def list_chats(user_id: str, conversation_id: str, page: int, page_size: int) ->
             }
         )
     return result
+
+
+def save_agent_trace(trace: Dict[str, Any], spans: List[Dict[str, Any]]) -> None:
+    timestamp = now_text()
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO t_agent_trace(
+              trace_id, user_id, conversation_id, query_message_id, answer_message_id,
+              query, answer, status, guardrails, diagnostic_state, total_ms, error,
+              created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(trace_id)
+            DO UPDATE SET
+              answer = excluded.answer,
+              status = excluded.status,
+              guardrails = excluded.guardrails,
+              diagnostic_state = excluded.diagnostic_state,
+              total_ms = excluded.total_ms,
+              error = excluded.error,
+              updated_at = excluded.updated_at
+            """,
+            (
+                trace["traceId"],
+                trace["userId"],
+                trace["conversationId"],
+                trace["queryMessageId"],
+                trace["answerMessageId"],
+                trace["query"],
+                trace.get("answer"),
+                trace.get("status", "ok"),
+                json.dumps(trace.get("guardrails", []), ensure_ascii=False),
+                json.dumps(trace.get("diagnosticState", {}), ensure_ascii=False),
+                int(trace.get("totalMs") or 0),
+                trace.get("error"),
+                trace.get("createdAt") or timestamp,
+                timestamp,
+            ),
+        )
+        conn.execute("DELETE FROM t_agent_span WHERE trace_id = ?", (trace["traceId"],))
+        for span in spans:
+            conn.execute(
+                """
+                INSERT INTO t_agent_span(
+                  span_id, trace_id, parent_span_id, name, kind, input, output,
+                  status, duration_ms, error, started_at, ended_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    span["spanId"],
+                    trace["traceId"],
+                    span.get("parentSpanId"),
+                    span["name"],
+                    span["kind"],
+                    json.dumps(span.get("input"), ensure_ascii=False),
+                    json.dumps(span.get("output"), ensure_ascii=False),
+                    span.get("status", "ok"),
+                    int(span.get("durationMs") or 0),
+                    span.get("error"),
+                    span.get("startedAt"),
+                    span.get("endedAt"),
+                ),
+            )
+
+
+def get_agent_trace(trace_id: str) -> Optional[Dict[str, Any]]:
+    with connect() as conn:
+        trace = conn.execute(
+            """
+            SELECT trace_id, user_id, conversation_id, query_message_id, answer_message_id,
+                   query, answer, status, guardrails, diagnostic_state, total_ms, error,
+                   created_at, updated_at
+            FROM t_agent_trace
+            WHERE trace_id = ?
+            """,
+            (trace_id,),
+        ).fetchone()
+        if not trace:
+            return None
+        spans = conn.execute(
+            """
+            SELECT span_id, trace_id, parent_span_id, name, kind, input, output,
+                   status, duration_ms, error, started_at, ended_at
+            FROM t_agent_span
+            WHERE trace_id = ?
+            ORDER BY started_at ASC, rowid ASC
+            """,
+            (trace_id,),
+        ).fetchall()
+    return {
+        "traceId": trace["trace_id"],
+        "userId": trace["user_id"],
+        "conversationId": trace["conversation_id"],
+        "queryMessageId": trace["query_message_id"],
+        "answerMessageId": trace["answer_message_id"],
+        "query": trace["query"],
+        "answer": trace["answer"],
+        "status": trace["status"],
+        "guardrails": json.loads(trace["guardrails"] or "[]"),
+        "diagnosticState": json.loads(trace["diagnostic_state"] or "{}"),
+        "totalMs": trace["total_ms"],
+        "error": trace["error"],
+        "createdAt": trace["created_at"],
+        "updatedAt": trace["updated_at"],
+        "spans": [
+            {
+                "spanId": row["span_id"],
+                "traceId": row["trace_id"],
+                "parentSpanId": row["parent_span_id"],
+                "name": row["name"],
+                "kind": row["kind"],
+                "input": json.loads(row["input"] or "null"),
+                "output": json.loads(row["output"] or "null"),
+                "status": row["status"],
+                "durationMs": row["duration_ms"],
+                "error": row["error"],
+                "startedAt": row["started_at"],
+                "endedAt": row["ended_at"],
+            }
+            for row in spans
+        ],
+    }
+
+
+def get_diagnostic_state(user_id: str, conversation_id: str) -> Optional[Dict[str, Any]]:
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT user_id, conversation_id, current_step, summary, facts, open_questions, risk_level, updated_at
+            FROM t_diagnostic_state
+            WHERE user_id = ? AND conversation_id = ?
+            """,
+            (user_id, conversation_id),
+        ).fetchone()
+    if not row:
+        return None
+    return {
+        "userId": row["user_id"],
+        "conversationId": row["conversation_id"],
+        "currentStep": row["current_step"],
+        "summary": row["summary"],
+        "facts": json.loads(row["facts"] or "[]"),
+        "openQuestions": json.loads(row["open_questions"] or "[]"),
+        "riskLevel": row["risk_level"],
+        "updatedAt": row["updated_at"],
+    }
+
+
+def upsert_diagnostic_state(
+    user_id: str,
+    conversation_id: str,
+    current_step: str,
+    summary: str,
+    facts: List[str],
+    open_questions: List[str],
+    risk_level: str,
+) -> Dict[str, Any]:
+    timestamp = now_text()
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO t_diagnostic_state(
+              user_id, conversation_id, current_step, summary, facts, open_questions, risk_level, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, conversation_id)
+            DO UPDATE SET
+              current_step = excluded.current_step,
+              summary = excluded.summary,
+              facts = excluded.facts,
+              open_questions = excluded.open_questions,
+              risk_level = excluded.risk_level,
+              updated_at = excluded.updated_at
+            """,
+            (
+                user_id,
+                conversation_id,
+                current_step,
+                summary,
+                json.dumps(facts, ensure_ascii=False),
+                json.dumps(open_questions, ensure_ascii=False),
+                risk_level,
+                timestamp,
+            ),
+        )
+    return get_diagnostic_state(user_id, conversation_id) or {}
 
 
 def upsert_knowledge_file(

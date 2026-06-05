@@ -56,6 +56,15 @@ class ChatListRequest(BaseModel):
     pageSize: int = Field(default=10, ge=1, le=100)
 
 
+class TraceDetailRequest(BaseModel):
+    traceId: str = Field(min_length=1)
+
+
+class DiagnosticStateRequest(BaseModel):
+    userId: str
+    conversationId: str
+
+
 class KnowledgeSaveRequest(BaseModel):
     title: str = Field(min_length=1)
     content: str = Field(min_length=1)
