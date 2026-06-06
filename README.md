@@ -170,6 +170,46 @@ sqlite3 data/agent.db "SELECT filename,title,size,timestamp FROM t_knowledge_fil
 sqlite3 data/agent.db "SELECT channel,query,filename,score,timestamp FROM t_knowledge_hit ORDER BY timestamp DESC LIMIT 20;"
 ```
 
+## 诊断 Runbook 流程
+
+Runbook 是独立于 Markdown 知识库的诊断流程资产，不会替代 `/knowledge` 的本地知识管理。知识库更适合沉淀说明文档、FAQ 和背景资料；Runbook 更适合沉淀线上故障排查步骤、证据要求、工具意图、验证方式和高风险护栏。
+
+首次初始化数据库时会幂等写入三条样例 Runbook：
+
+- `1401027 insufficient memory 训练任务诊断`
+- `训练任务 Pending / 调度失败诊断`
+- `镜像 / CUDA / 依赖启动失败诊断`
+
+Runbook 支持的治理字段：
+
+- 服务、场景、严重级别、负责人、版本。
+- 触发条件、流程摘要、验证方式、升级路径。
+- 标签、关联知识、风险护栏。
+- 状态：`draft` 草稿、`review` 待审核、`published` 已发布、`archived` 已归档。
+- 诊断步骤：步骤标题、步骤类型、操作说明、所需证据、工具意图、预期结果、风险级别。
+
+在 `/runbooks` 页面可以管理 Runbook 流程。页面左侧用于筛选和选择 Runbook，主编辑区维护元数据和诊断步骤，右侧执行视图会按当前步骤即时预览，并对 `high` 风险步骤展示高风险确认提示。
+
+诊断会话页 `/` 中有 `Runbook 回答` 开关：
+
+- 关闭时保持原有知识库 / 通用诊断链路。
+- 开启时聊天请求会发送 `groundingMode: "runbook"`，只使用已发布 Runbook 组织回答，不再查询本地 Markdown 知识库。
+- 当用户问题精确匹配已发布 Runbook 标题时，后端也会自动切换到 Runbook 模式，避免把 Runbook 标题误当普通知识库问题。
+- Runbook 模式仍然通过 SSE 流式返回，回答会按 `步骤一`、`步骤二`、`步骤三` 这样的格式展开，并包含每步的操作、证据、预期结果、风险级别和工具意图。
+- trace 会记录 `runbook_retrieval` span；知识库模式则记录 `knowledge_retrieval` span。
+
+Runbook 相关表：
+
+- `t_runbook`：Runbook 元数据，包括标题、服务、场景、严重级别、状态、触发条件、验证方式、升级路径、风险护栏和标签。
+- `t_runbook_step`：Runbook 步骤，包括顺序、类型、操作说明、证据要求、工具意图、预期结果和风险级别。
+
+可用下面命令查询：
+
+```bash
+sqlite3 data/agent.db "SELECT runbook_id,title,service,scenario,severity,status,updated_at FROM t_runbook ORDER BY updated_at DESC;"
+sqlite3 data/agent.db "SELECT runbook_id,step_order,title,action_type,tool_name,risk_level FROM t_runbook_step ORDER BY runbook_id,step_order;"
+```
+
 ## 可解释诊断 Agent
 
 聊天接口不再只返回一段问答文本，而是把每次诊断拆成稳定链路：
@@ -234,6 +274,8 @@ sqlite3 data/agent.db "SELECT name,variant,case_count,pass_count,avg_score,knowl
 
 ### 流式聊天
 
+知识库 / 通用诊断模式：
+
 ```bash
 curl -N -X POST http://127.0.0.1:8000/agent/v1/assistant/chat \
   -H "Content-Type: application/json" \
@@ -247,6 +289,25 @@ curl -N -X POST http://127.0.0.1:8000/agent/v1/assistant/chat \
       "service": "Wise",
       "scene": "模型任务",
       "title": "MTP训练任务诊断"
+    }
+  }'
+```
+
+Runbook 模式：
+
+```bash
+curl -N -X POST http://127.0.0.1:8000/agent/v1/assistant/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "1401027 insufficient memory 报错",
+    "needDeepThinking": 0,
+    "groundingMode": "runbook",
+    "context": {
+      "userId": "l0123456",
+      "conversationId": "18b20e64-17fb-4585-9a69-ae1c8f101666",
+      "service": "Wise",
+      "scene": "模型任务",
+      "title": "Runbook 模式诊断"
     }
   }'
 ```
