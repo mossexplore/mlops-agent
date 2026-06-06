@@ -81,3 +81,60 @@ def change_runbook_status(runbook_id: str, status: str) -> Optional[Dict[str, An
     if status not in RUNBOOK_STATUSES:
         raise ValueError(f"Unsupported runbook status: {status}")
     return update_runbook_status(runbook_id, status)
+
+
+def retrieve_runbooks(query: str, top_k: int = 3) -> List[Dict[str, Any]]:
+    normalized = query.strip().lower()
+    if not normalized:
+        return []
+
+    candidates = list_runbooks(status="published")
+    scored: List[Dict[str, Any]] = []
+    query_terms = {term for term in normalized.replace("/", " ").replace("-", " ").split() if term}
+    for item in candidates:
+        detail = get_runbook(item["runbookId"])
+        if not detail:
+            continue
+        haystack = " ".join(
+            [
+                detail.get("title") or "",
+                detail.get("scenario") or "",
+                detail.get("trigger") or "",
+                detail.get("summary") or "",
+                " ".join(detail.get("tags") or []),
+                " ".join(step.get("title") or "" for step in detail.get("steps") or []),
+                " ".join(step.get("instruction") or "" for step in detail.get("steps") or []),
+            ]
+        ).lower()
+        score = 0.0
+        title = (detail.get("title") or "").lower()
+        if normalized == title:
+            score += 1.0
+        elif normalized in title or title in normalized:
+            score += 0.55
+        for term in query_terms:
+            if term and term in haystack:
+                score += 0.12
+        if any(tag.lower() in normalized for tag in detail.get("tags") or []):
+            score += 0.25
+        if detail.get("scenario", "").lower() in normalized:
+            score += 0.18
+        if score > 0:
+            detail["score"] = round(min(score, 1), 4)
+            scored.append(detail)
+
+    scored.sort(key=lambda item: (item["score"], item.get("severity", "")), reverse=True)
+    return scored[:top_k]
+
+
+def should_use_runbook(query: str, results: List[Dict[str, Any]]) -> bool:
+    if not results:
+        return False
+    explicit_keywords = ("runbook", "流程", "排查手册", "操作手册", "诊断步骤")
+    if any(keyword in query.lower() or keyword in query for keyword in explicit_keywords):
+        return True
+    return float(results[0].get("score") or 0) >= 0.12
+
+
+def has_strong_runbook_match(results: List[Dict[str, Any]]) -> bool:
+    return bool(results and float(results[0].get("score") or 0) >= 0.95)

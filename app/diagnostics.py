@@ -137,6 +137,27 @@ def run_guardrails(query: str, knowledge_results: List[Dict[str, Any]]) -> List[
     return guardrails
 
 
+def runbook_tool_intents(runbook_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    intents: List[Dict[str, Any]] = []
+    seen = set()
+    for runbook in runbook_results:
+        for step in runbook.get("steps") or []:
+            tool_name = step.get("toolName")
+            if not tool_name or tool_name in seen:
+                continue
+            seen.add(tool_name)
+            intents.append(
+                {
+                    "tool": tool_name,
+                    "description": step.get("title") or "Runbook 工具检查",
+                    "status": "planned_from_runbook",
+                    "reason": step.get("instruction") or "由命中的 Runbook 步骤触发。",
+                    "runbookId": runbook.get("runbookId"),
+                }
+            )
+    return intents
+
+
 def plan_tool_calls(query: str, context: Any) -> List[Dict[str, Any]]:
     conversation_id = getattr(context, "conversationId", "")
     candidates = [
@@ -239,6 +260,116 @@ def recommended_actions(scene: Dict[str, Any], tools: List[Dict[str, Any]]) -> L
     return actions
 
 
+def runbook_actions(runbook_results: List[Dict[str, Any]]) -> List[str]:
+    if not runbook_results:
+        return []
+    actions: List[str] = []
+    for runbook in runbook_results[:2]:
+        for step in (runbook.get("steps") or [])[:5]:
+            instruction = step.get("instruction")
+            if instruction:
+                actions.append(f"{runbook.get('title')} / {step.get('title')}：{instruction}")
+    return actions
+
+
+def chinese_step_label(index: int) -> str:
+    labels = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"]
+    if 1 <= index <= len(labels):
+        return f"步骤{labels[index - 1]}"
+    return f"步骤{index}"
+
+
+def render_runbook_answer(
+    query: str,
+    problem: Dict[str, Any],
+    scene: Dict[str, Any],
+    runbook_results: List[Dict[str, Any]],
+    tools: List[Dict[str, Any]],
+    warnings: List[str],
+    diagnostic_state: Dict[str, Any],
+) -> str:
+    if not runbook_results:
+        return "\n".join(
+            [
+                "### Runbook 诊断流程",
+                "",
+                "#### 1. 未命中已发布 Runbook",
+                f"- 原始问题：{query}",
+                f"- 识别信号：{', '.join(problem['signals'])}",
+                "- 未找到可用 Runbook，建议先到 Runbook 页面补充触发条件、诊断步骤、证据要求和验证方式。",
+                "",
+                "#### 2. 下一步需要补充",
+                f"- {'; '.join(diagnostic_state['openQuestions'][:3])}",
+                "",
+                "#### 3. 风险提示",
+                *[f"- {item}" for item in warnings],
+            ]
+        ).strip()
+
+    runbook = runbook_results[0]
+    steps = runbook.get("steps") or []
+    step_lines: List[str] = []
+    for index, step in enumerate(steps, start=1):
+        tool = f"\n   - 工具意图：`{step.get('toolName')}`" if step.get("toolName") else ""
+        step_lines.extend(
+            [
+                f"{chinese_step_label(index)}：**{step.get('title')}**",
+                f"   - 操作：{step.get('instruction') or '未填写'}",
+                f"   - 所需证据：{step.get('evidenceRequired') or '未填写'}",
+                f"   - 预期结果：{step.get('expectedResult') or '未填写'}",
+                f"   - 风险级别：{step.get('riskLevel') or 'low'}{tool}",
+            ]
+        )
+
+    tool_lines = [
+        f"- {item['description']}：{item['status']}，{item['reason']}"
+        for item in tools
+    ] or ["- 本轮 Runbook 没有配置工具意图，按人工检查步骤执行。"]
+    high_risk_steps = [step for step in steps if step.get("riskLevel") == "high"]
+    high_risk_lines = [
+        f"- {step.get('title')}：执行前必须确认影响范围、负责人审批和回退方案。"
+        for step in high_risk_steps
+    ] or ["- 本轮 Runbook 未配置 high 风险步骤。"]
+    risk_controls = [f"- {item}" for item in (runbook.get("riskControls") or [])] or ["- 未配置额外风险护栏。"]
+    warning_lines = [f"- {item}" for item in warnings]
+
+    return "\n".join(
+        [
+            "### Runbook 诊断流程",
+            "",
+            "#### 1. 命中的 Runbook",
+            f"- 标题：**{runbook.get('title')}**",
+            f"- 服务 / 场景：{runbook.get('service')} / {runbook.get('scenario')}",
+            f"- 严重级别：{runbook.get('severity')}，负责人：{runbook.get('owner') or '未填写'}",
+            f"- 触发条件：{runbook.get('trigger') or '未填写'}",
+            f"- 匹配分：{runbook.get('score')}",
+            "",
+            "#### 2. 按 Runbook 步骤排查",
+            *step_lines,
+            "",
+            "#### 3. 工具调用计划",
+            *tool_lines,
+            "",
+            "#### 4. 验证方式",
+            f"- {runbook.get('verification') or '未填写'}",
+            "",
+            "#### 5. 升级路径",
+            f"- {runbook.get('escalation') or '未填写'}",
+            "",
+            "#### 6. 风险护栏",
+            "高风险确认：",
+            *high_risk_lines,
+            "通用护栏：",
+            *risk_controls,
+            *warning_lines,
+            "",
+            "#### 7. 多轮诊断状态",
+            f"- 当前步骤：{diagnostic_state['currentStep']}",
+            f"- 下一步需要：{'; '.join(diagnostic_state['openQuestions'][:3])}",
+        ]
+    ).strip()
+
+
 def risk_warnings(guardrails: List[Dict[str, Any]]) -> List[str]:
     warnings = [
         "当前诊断不会编造平台实时数据；未接入工具前，所有日志、指标、事件都需要用户提供或人工查询。",
@@ -283,6 +414,8 @@ def render_answer(
     warnings: List[str],
     diagnostic_state: Dict[str, Any],
     need_deep_thinking: int = 0,
+    grounding_mode: str = "knowledge",
+    runbook_results: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     sources = []
     for item in knowledge_results[:3]:
@@ -294,6 +427,45 @@ def render_answer(
     candidate_lines = [f"{index}. {item['cause']}（置信度：{item['confidence']}）" for index, item in enumerate(candidates, start=1)]
     action_lines = [f"{index}. {item}" for index, item in enumerate(actions, start=1)]
     warning_lines = [f"- {item}" for item in warnings]
+    runbook_results = runbook_results or []
+    if grounding_mode == "runbook":
+        return render_runbook_answer(
+            query=query,
+            problem=problem,
+            scene=scene,
+            runbook_results=runbook_results,
+            tools=tools,
+            warnings=warnings,
+            diagnostic_state=diagnostic_state,
+        )
+
+    runbook_lines: List[str] = []
+    for runbook in runbook_results[:2]:
+        runbook_lines.extend(
+            [
+                f"- **{runbook.get('title')}**（{runbook.get('service')} / {runbook.get('scenario')} / {runbook.get('severity')}，score {runbook.get('score')}）",
+                f"  - 触发条件：{runbook.get('trigger') or '未填写'}",
+                f"  - 验证方式：{runbook.get('verification') or '未填写'}",
+            ]
+        )
+        for step in (runbook.get("steps") or [])[:4]:
+            tool = f"，工具：`{step.get('toolName')}`" if step.get("toolName") else ""
+            runbook_lines.append(
+                f"  - {step.get('order')}. {step.get('title')}：{step.get('instruction')}（证据：{step.get('evidenceRequired') or '未填写'}，风险：{step.get('riskLevel')}{tool}）"
+            )
+    grounding_section = (
+        [
+            "#### 3. Runbook grounding",
+            "命中的已发布 Runbook：" if runbook_lines else "本轮未命中可用 Runbook：",
+            *(runbook_lines or ["- 未命中已发布 Runbook，仍按通用诊断链路给出候选和下一步证据。"]),
+        ]
+        if grounding_mode == "runbook"
+        else [
+            "#### 3. 知识检索",
+            "根据本地知识库检索结果：" if sources else "本轮未形成可靠知识库 grounding：",
+            *(sources or ["- 未命中已发布知识片段，本轮不把知识库结果作为确定依据。"]),
+        ]
+    )
     answer = [
         "### 可解释诊断链路",
         "",
@@ -308,9 +480,7 @@ def render_answer(
         f"- 类型：{scene['category']}",
         f"- 上一轮状态：{scene.get('previousStep') or '无'}",
         "",
-        "#### 3. 知识检索",
-        "根据本地知识库检索结果：" if sources else "本轮未形成可靠知识库 grounding：",
-        *(sources or ["- 未命中已发布知识片段，本轮不把知识库结果作为确定依据。"]),
+        *grounding_section,
         "",
         "#### 4. 工具调用计划",
         *tool_lines,
@@ -339,8 +509,10 @@ def run_diagnostic_agent(
     query_message_id: str,
     answer_message_id: str,
     knowledge_results: List[Dict[str, Any]],
+    runbook_results: Optional[List[Dict[str, Any]]] = None,
     previous_state: Optional[Dict[str, Any]] = None,
     need_deep_thinking: int = 0,
+    grounding_mode: str = "knowledge",
 ) -> Dict[str, Any]:
     trace_id = str(uuid.uuid4())
     trace_start_perf = time.perf_counter()
@@ -357,18 +529,35 @@ def run_diagnostic_agent(
     scene = judge_scene(query, context, previous_state)
     recorder.record("scene_judgement", "chain", {"query": query, "context": getattr(context, "model_dump", lambda: {})()}, scene, started_at=started, start_perf=start_perf)
 
+    if grounding_mode == "knowledge":
+        started = now_iso()
+        start_perf = time.perf_counter()
+        retrieval_output = [
+            {
+                "source": Path(item.get("source", "")).name,
+                "heading": item.get("heading"),
+                "score": item.get("score"),
+                "status": item.get("status"),
+            }
+            for item in knowledge_results
+        ]
+        recorder.record("knowledge_retrieval", "retriever", {"query": query, "topK": 5}, retrieval_output, started_at=started, start_perf=start_perf)
+
     started = now_iso()
     start_perf = time.perf_counter()
-    retrieval_output = [
+    runbook_results = runbook_results or []
+    runbook_output = [
         {
-            "source": Path(item.get("source", "")).name,
-            "heading": item.get("heading"),
+            "runbookId": item.get("runbookId"),
+            "title": item.get("title"),
+            "scenario": item.get("scenario"),
+            "severity": item.get("severity"),
             "score": item.get("score"),
-            "status": item.get("status"),
+            "stepCount": len(item.get("steps") or []),
         }
-        for item in knowledge_results
+        for item in runbook_results
     ]
-    recorder.record("knowledge_retrieval", "retriever", {"query": query, "topK": 5}, retrieval_output, started_at=started, start_perf=start_perf)
+    recorder.record("runbook_retrieval", "retriever", {"query": query, "topK": 3, "mode": grounding_mode}, runbook_output, started_at=started, start_perf=start_perf)
 
     started = now_iso()
     start_perf = time.perf_counter()
@@ -377,7 +566,7 @@ def run_diagnostic_agent(
 
     started = now_iso()
     start_perf = time.perf_counter()
-    tools = plan_tool_calls(query, context)
+    tools = runbook_tool_intents(runbook_results) if grounding_mode == "runbook" and runbook_results else plan_tool_calls(query, context)
     recorder.record("tool_planning", "tool", {"query": query}, tools, started_at=started, start_perf=start_perf)
 
     started = now_iso()
@@ -387,7 +576,7 @@ def run_diagnostic_agent(
 
     started = now_iso()
     start_perf = time.perf_counter()
-    actions = recommended_actions(scene, tools)
+    actions = runbook_actions(runbook_results) or recommended_actions(scene, tools)
     warnings = risk_warnings(guardrails)
     diagnostic_state = update_state(problem, scene, candidates, warnings)
     answer = render_answer(
@@ -401,6 +590,8 @@ def run_diagnostic_agent(
         warnings=warnings,
         diagnostic_state=diagnostic_state,
         need_deep_thinking=need_deep_thinking,
+        grounding_mode=grounding_mode,
+        runbook_results=runbook_results,
     )
     recorder.record(
         "response_generation",
@@ -423,6 +614,7 @@ def run_diagnostic_agent(
             "status": "ok",
             "guardrails": guardrails,
             "diagnosticState": diagnostic_state,
+            "groundingMode": grounding_mode,
             "totalMs": int((time.perf_counter() - trace_start_perf) * 1000),
             "createdAt": trace_started_at,
         },

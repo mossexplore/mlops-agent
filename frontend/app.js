@@ -12,6 +12,7 @@ const els = {
   title: document.querySelector("#title"),
   conversationLabel: document.querySelector("#conversationLabel"),
   deepThinking: document.querySelector("#deepThinking"),
+  runbookMode: document.querySelector("#runbookMode"),
   messages: document.querySelector("#messages"),
   query: document.querySelector("#query"),
   composer: document.querySelector("#composer"),
@@ -429,6 +430,7 @@ async function submitChat(event) {
       body: JSON.stringify({
         query,
         needDeepThinking: els.deepThinking.checked ? 1 : 0,
+        groundingMode: els.runbookMode.checked ? "runbook" : "knowledge",
         prompt: "mlops-agent",
         context: currentContext(),
       }),

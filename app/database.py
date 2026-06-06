@@ -317,10 +317,6 @@ def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition
 
 
 def seed_sample_runbooks(conn: sqlite3.Connection) -> None:
-    existing = conn.execute("SELECT COUNT(*) AS count FROM t_runbook").fetchone()
-    if existing and existing["count"]:
-        return
-
     timestamp = now_text()
     samples = [
         {
@@ -484,7 +480,7 @@ def seed_sample_runbooks(conn: sqlite3.Connection) -> None:
     for item in samples:
         conn.execute(
             """
-            INSERT INTO t_runbook(
+            INSERT OR IGNORE INTO t_runbook(
               runbook_id, title, service, scenario, severity, status, owner, version,
               trigger, summary, verification, escalation, risk_controls, tags,
               related_knowledge, created_at, updated_at
@@ -514,7 +510,7 @@ def seed_sample_runbooks(conn: sqlite3.Connection) -> None:
         for index, step in enumerate(item["steps"], start=1):
             conn.execute(
                 """
-                INSERT INTO t_runbook_step(
+                INSERT OR IGNORE INTO t_runbook_step(
                   step_id, runbook_id, step_order, title, action_type, instruction,
                   evidence_required, tool_name, expected_result, risk_level
                 )

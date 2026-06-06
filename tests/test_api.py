@@ -189,6 +189,88 @@ def test_feedback_without_query_message_id_is_recorded_in_database():
     assert row["feedback"] == "like"
 
 
+def test_chat_stream_can_use_runbook_grounding():
+    TEST_DB.unlink(missing_ok=True)
+    init_db()
+    conversation_id = "conv-test-runbook-mode"
+    request = {
+        "query": "1401027 insufficient memory 报错，按 runbook 怎么排查",
+        "needDeepThinking": 0,
+        "groundingMode": "runbook",
+        "context": {
+            "userId": "l0123456",
+            "conversationId": conversation_id,
+            "service": "Wise",
+            "scene": "模型任务",
+            "title": "Runbook 模式诊断",
+        },
+    }
+
+    with client.stream("POST", "/agent/v1/assistant/chat", json=request) as response:
+        assert response.status_code == 200
+        chunks = []
+        trace_id = None
+        grounding_mode = None
+        for line in response.iter_lines():
+            if not line or not line.startswith("data: "):
+                continue
+            payload = json.loads(line.removeprefix("data: "))
+            chunks.append(payload["content"])
+            trace_id = payload["traceId"]
+            grounding_mode = payload["groundingMode"]
+
+    answer_text = "".join(chunks)
+    assert grounding_mode == "runbook"
+    assert "Runbook 诊断流程" in answer_text
+    assert "按 Runbook 步骤排查" in answer_text
+    assert "知识检索" not in answer_text
+    assert "1401027 insufficient memory 训练任务诊断" in answer_text
+    assert "步骤一：" in answer_text
+    assert "步骤二：" in answer_text
+    assert "检查 OOM 事件和资源峰值" in answer_text
+    assert "高风险" in answer_text or "风险：high" in answer_text
+
+    trace_response = client.post("/agent/v1/assistant/trace/detail", json={"traceId": trace_id})
+    trace = trace_response.json()["result"]["data"]
+    span_names = {span["name"] for span in trace["spans"]}
+    assert "runbook_retrieval" in span_names
+    assert "knowledge_retrieval" not in span_names
+
+
+def test_chat_auto_uses_runbook_when_query_matches_published_title():
+    TEST_DB.unlink(missing_ok=True)
+    init_db()
+    request = {
+        "query": "训练任务 Pending / 调度失败诊断",
+        "needDeepThinking": 0,
+        "context": {
+            "userId": "l0123456",
+            "conversationId": "conv-test-runbook-title",
+            "service": "Wise",
+            "scene": "模型任务",
+            "title": "MTP训练任务诊断",
+        },
+    }
+
+    with client.stream("POST", "/agent/v1/assistant/chat", json=request) as response:
+        chunks = []
+        grounding_mode = None
+        for line in response.iter_lines():
+            if line and line.startswith("data: "):
+                payload = json.loads(line.removeprefix("data: "))
+                grounding_mode = payload["groundingMode"]
+                chunks.append(payload["content"])
+
+    answer_text = "".join(chunks)
+    assert grounding_mode == "runbook"
+    assert "训练任务 Pending / 调度失败诊断" in answer_text
+    assert "步骤一：" in answer_text
+    assert "步骤二：" in answer_text
+    assert "读取调度事件" in answer_text
+    assert "核对资源申请" in answer_text
+    assert "知识检索" not in answer_text
+
+
 def test_ops_dashboard_counts_usage_and_feedback():
     TEST_DB.unlink(missing_ok=True)
     init_db()

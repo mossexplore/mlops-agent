@@ -64,8 +64,11 @@ from .quality import (
 from .runbooks import (
     change_runbook_status,
     get_runbook_detail,
+    has_strong_runbook_match,
     list_runbook_workspace,
+    retrieve_runbooks,
     save_runbook_workspace,
+    should_use_runbook,
 )
 from .schemas import (
     ChatListRequest,
@@ -203,27 +206,34 @@ def me(user=Depends(require_admin)):
 @app.post("/agent/v1/assistant/chat")
 async def chat(request: ChatRequest, _user=Depends(current_user)) -> StreamingResponse:
     context = request.context
+    runbook_results = retrieve_runbooks(request.query, top_k=3)
+    grounding_mode = "runbook" if request.groundingMode == "runbook" or has_strong_runbook_match(runbook_results) else "knowledge"
     query_message_id = str(uuid.uuid4())
     answer_message_id = str(uuid.uuid4())
     query_send_time = int(time.time() * 1000)
     previous_state = get_diagnostic_state(context.userId, context.conversationId)
-    knowledge_results = retrieve_knowledge(request.query, top_k=5)
-    record_knowledge_hits(
-        channel="chat",
-        query=request.query,
-        results=knowledge_results,
-        user_id=context.userId,
-        conversation_id=context.conversationId,
-        message_id=query_message_id,
-    )
+    knowledge_results = retrieve_knowledge(request.query, top_k=5) if grounding_mode == "knowledge" else []
+    if grounding_mode != "runbook":
+        runbook_results = []
+    if grounding_mode == "knowledge":
+        record_knowledge_hits(
+            channel="chat",
+            query=request.query,
+            results=knowledge_results,
+            user_id=context.userId,
+            conversation_id=context.conversationId,
+            message_id=query_message_id,
+        )
     diagnostic = run_diagnostic_agent(
         query=request.query,
         context=context,
         query_message_id=query_message_id,
         answer_message_id=answer_message_id,
-        knowledge_results=knowledge_results if should_use_local_knowledge(request.query, knowledge_results) else [],
+        knowledge_results=knowledge_results if grounding_mode == "knowledge" and should_use_local_knowledge(request.query, knowledge_results) else [],
+        runbook_results=runbook_results if grounding_mode == "runbook" and should_use_runbook(request.query, runbook_results) else [],
         previous_state=previous_state,
         need_deep_thinking=request.needDeepThinking,
+        grounding_mode=grounding_mode,
     )
     answer = diagnostic["answer"]
     trace = diagnostic["trace"]
@@ -258,6 +268,7 @@ async def chat(request: ChatRequest, _user=Depends(current_user)) -> StreamingRe
                 "messageId": answer_message_id,
                 "queryMessageId": query_message_id,
                 "traceId": trace["traceId"],
+                "groundingMode": grounding_mode,
                 "diagnosticState": diagnostic["diagnosticState"],
                 "messageSendTime": int(time.time() * 1000),
                 "querySendTime": query_send_time,

@@ -17,6 +17,7 @@ class ChatRequest(BaseModel):
     model: Optional[str] = None
     needDeepThinking: int = 0
     prompt: Optional[str] = None
+    groundingMode: str = "knowledge"
     context: ChatContext
 
 
