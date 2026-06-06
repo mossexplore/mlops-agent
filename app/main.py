@@ -61,6 +61,12 @@ from .quality import (
     list_feedback_workspace,
     run_eval_suite,
 )
+from .runbooks import (
+    change_runbook_status,
+    get_runbook_detail,
+    list_runbook_workspace,
+    save_runbook_workspace,
+)
 from .schemas import (
     ChatListRequest,
     ChatRequest,
@@ -84,6 +90,10 @@ from .schemas import (
     OpsDashboardRequest,
     QualityFeedbackAnnotateRequest,
     QualityFeedbackListRequest,
+    RunbookDetailRequest,
+    RunbookListRequest,
+    RunbookSaveRequest,
+    RunbookStatusRequest,
     api_response,
 )
 
@@ -127,6 +137,14 @@ def knowledge_page(request: Request) -> FileResponse:
     if redirect:
         return redirect
     return FileResponse(STATIC_DIR / "knowledge.html")
+
+
+@app.get("/runbooks")
+def runbooks_page(request: Request) -> FileResponse:
+    redirect = require_page_session(request)
+    if redirect:
+        return redirect
+    return FileResponse(STATIC_DIR / "runbooks.html")
 
 
 @app.get("/ops")
@@ -341,6 +359,64 @@ def knowledge_status(request: KnowledgeStatusRequest, _user=Depends(require_admi
 @app.post("/agent/v1/knowledge/gap/list")
 def knowledge_gap_list(request: KnowledgeGapListRequest, _user=Depends(require_admin)):
     return api_response(data=list_markdown_knowledge_gaps(request.page, request.pageSize))
+
+
+@app.post("/agent/v1/runbook/list")
+def runbook_list(request: RunbookListRequest, _user=Depends(require_admin)):
+    return api_response(
+        data=list_runbook_workspace(
+            status=request.status,
+            service=request.service,
+            scenario=request.scenario,
+            query=request.query,
+        )
+    )
+
+
+@app.post("/agent/v1/runbook/detail")
+def runbook_detail(request: RunbookDetailRequest, _user=Depends(require_admin)):
+    data = get_runbook_detail(request.runbookId)
+    if not data:
+        return api_response(data=None, code=404, des="Runbook not found")
+    return api_response(data=data)
+
+
+@app.post("/agent/v1/runbook/save")
+def runbook_save(request: RunbookSaveRequest, _user=Depends(require_admin)):
+    try:
+        return api_response(
+            data=save_runbook_workspace(
+                runbook_id=request.runbookId,
+                title=request.title,
+                service=request.service,
+                scenario=request.scenario,
+                severity=request.severity,
+                status=request.status,
+                owner=request.owner,
+                version=request.version,
+                trigger=request.trigger,
+                summary=request.summary,
+                verification=request.verification,
+                escalation=request.escalation,
+                risk_controls=request.riskControls,
+                tags=request.tags,
+                related_knowledge=request.relatedKnowledge,
+                steps=[dump_model(step) for step in request.steps],
+            )
+        )
+    except ValueError as exc:
+        return api_response(data=None, code=400, des=str(exc))
+
+
+@app.post("/agent/v1/runbook/status")
+def runbook_status(request: RunbookStatusRequest, _user=Depends(require_admin)):
+    try:
+        data = change_runbook_status(request.runbookId, request.status)
+    except ValueError as exc:
+        return api_response(data=None, code=400, des=str(exc))
+    if not data:
+        return api_response(data=None, code=404, des="Runbook not found")
+    return api_response(data=data)
 
 
 @app.post("/agent/v1/ops/dashboard")

@@ -103,6 +103,53 @@ class KnowledgeGapListRequest(BaseModel):
     pageSize: int = Field(default=20, ge=1, le=100)
 
 
+class RunbookStepRequest(BaseModel):
+    stepId: Optional[str] = None
+    order: Optional[int] = Field(default=None, ge=1)
+    title: str = Field(min_length=1)
+    actionType: str = "check"
+    instruction: str = Field(min_length=1)
+    evidenceRequired: Optional[str] = None
+    toolName: Optional[str] = None
+    expectedResult: Optional[str] = None
+    riskLevel: str = "low"
+
+
+class RunbookListRequest(BaseModel):
+    status: Optional[str] = None
+    service: Optional[str] = None
+    scenario: Optional[str] = None
+    query: Optional[str] = None
+
+
+class RunbookDetailRequest(BaseModel):
+    runbookId: str = Field(min_length=1)
+
+
+class RunbookSaveRequest(BaseModel):
+    runbookId: Optional[str] = None
+    title: str = Field(min_length=1)
+    service: str = "Wise"
+    scenario: str = "模型任务"
+    severity: str = "P2"
+    status: str = "draft"
+    owner: Optional[str] = None
+    version: str = "v1"
+    trigger: Optional[str] = None
+    summary: Optional[str] = None
+    verification: Optional[str] = None
+    escalation: Optional[str] = None
+    riskControls: List[str] = Field(default_factory=list)
+    tags: List[str] = Field(default_factory=list)
+    relatedKnowledge: List[str] = Field(default_factory=list)
+    steps: List[RunbookStepRequest] = Field(default_factory=list)
+
+
+class RunbookStatusRequest(BaseModel):
+    runbookId: str = Field(min_length=1)
+    status: str
+
+
 class OpsDashboardRequest(BaseModel):
     startDate: Optional[str] = None
     endDate: Optional[str] = None

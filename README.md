@@ -27,9 +27,14 @@
 - `POST /agent/v1/knowledge/status`：切换知识生命周期状态，支持草稿、待审核、已发布、已归档。
 - `POST /agent/v1/knowledge/revision/list`：查询知识内容和状态变更版本历史。
 - `POST /agent/v1/knowledge/gap/list`：查询由点踩反馈暴露出的知识缺口。
+- `POST /agent/v1/runbook/list`：查询诊断 Runbook 列表，支持按状态、服务、场景和关键词筛选。
+- `POST /agent/v1/runbook/detail`：查询 Runbook 元数据、诊断步骤、工具意图、证据要求和风险级别。
+- `POST /agent/v1/runbook/save`：新增或更新 Runbook，不替代现有 Markdown 知识库。
+- `POST /agent/v1/runbook/status`：切换 Runbook 生命周期状态，支持草稿、待审核、已发布、已归档。
 - `POST /agent/v1/ops/dashboard`：查询运营看板聚合数据，包括日活、提问、会话、点赞、点踩和点踩原因。
 - `GET /`：Web 聊天工作台，支持流式显示、历史会话和反馈。
 - `GET /knowledge`：本地 Markdown 知识库管理页面。
+- `GET /runbooks`：诊断 Runbook 编排页面，管理触发条件、证据、步骤、工具意图、验证方式和高风险护栏。
 - `GET /ops`：运营看板页面，支持按日期、用户、来源和场景筛选。
 - `GET /quality`：质量评估与反馈闭环工作台。
 
@@ -57,6 +62,7 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 - Web 页面：http://127.0.0.1:8000
 - 知识库管理：http://127.0.0.1:8000/knowledge
+- Runbook 编排：http://127.0.0.1:8000/runbooks
 - 运营看板：http://127.0.0.1:8000/ops
 - 质量闭环：http://127.0.0.1:8000/quality
 - API 文档：http://127.0.0.1:8000/docs

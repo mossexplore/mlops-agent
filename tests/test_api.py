@@ -261,6 +261,77 @@ def test_ops_dashboard_counts_usage_and_feedback():
     assert {item["userId"] for item in data["topUsers"]} == {"l0123456", "l0654321"}
 
 
+def test_runbook_workspace_seed_save_and_status_flow():
+    TEST_DB.unlink(missing_ok=True)
+    init_db()
+
+    list_response = client.post("/agent/v1/runbook/list", json={})
+    runbooks = list_response.json()["result"]["data"]
+    assert len(runbooks) >= 3
+    memory_runbook = next(item for item in runbooks if item["runbookId"] == "rb-memory-1401027")
+    assert memory_runbook["stepCount"] == 4
+    assert memory_runbook["status"] == "published"
+
+    detail_response = client.post("/agent/v1/runbook/detail", json={"runbookId": "rb-memory-1401027"})
+    detail = detail_response.json()["result"]["data"]
+    assert detail["title"] == "1401027 insufficient memory 训练任务诊断"
+    assert detail["steps"][1]["toolName"] == "resource_metrics"
+    assert any(step["riskLevel"] == "high" for step in detail["steps"])
+
+    save_response = client.post(
+        "/agent/v1/runbook/save",
+        json={
+            "title": "数据集读取失败诊断",
+            "service": "Wise",
+            "scenario": "数据访问",
+            "severity": "P3",
+            "status": "draft",
+            "owner": "数据平台值班",
+            "version": "v1",
+            "trigger": "训练任务出现 dataset not found 或 permission denied。",
+            "summary": "先确认路径、权限和最近数据发布变更，再小样本读取验证。",
+            "verification": "小样本任务能读取同一路径数据。",
+            "escalation": "跨项目权限异常升级数据平台负责人。",
+            "riskControls": ["不要直接修改生产数据权限"],
+            "tags": ["Dataset", "Permission"],
+            "relatedKnowledge": ["dataset-access.md"],
+            "steps": [
+                {
+                    "title": "确认数据路径",
+                    "actionType": "check",
+                    "instruction": "记录数据集路径、版本和任务用户。",
+                    "evidenceRequired": "数据路径和提交用户",
+                    "expectedResult": "定位到唯一数据集版本。",
+                    "riskLevel": "low",
+                },
+                {
+                    "title": "验证访问权限",
+                    "actionType": "tool",
+                    "instruction": "查询任务用户对数据路径的读权限。",
+                    "evidenceRequired": "ACL 或权限检查结果",
+                    "toolName": "dataset_acl",
+                    "expectedResult": "确认是否为权限不足。",
+                    "riskLevel": "low",
+                },
+            ],
+        },
+    )
+    saved = save_response.json()["result"]["data"]
+    assert saved["runbookId"]
+    assert saved["steps"][1]["toolName"] == "dataset_acl"
+
+    status_response = client.post(
+        "/agent/v1/runbook/status",
+        json={"runbookId": saved["runbookId"], "status": "review"},
+    )
+    updated = status_response.json()["result"]["data"]
+    assert updated["status"] == "review"
+
+    filtered_response = client.post("/agent/v1/runbook/list", json={"status": "review", "query": "数据集"})
+    filtered = filtered_response.json()["result"]["data"]
+    assert any(item["runbookId"] == saved["runbookId"] for item in filtered)
+
+
 def test_quality_feedback_eval_and_experiment_loop():
     TEST_DB.unlink(missing_ok=True)
     init_db()

@@ -256,6 +256,41 @@ def init_db(db_path: Optional[Path] = None) -> None:
               updated_at TEXT,
               PRIMARY KEY (experiment_id)
             );
+
+            CREATE TABLE IF NOT EXISTS t_runbook (
+              runbook_id TEXT NOT NULL,
+              title TEXT NOT NULL,
+              service TEXT NOT NULL DEFAULT 'Wise',
+              scenario TEXT NOT NULL DEFAULT '模型任务',
+              severity TEXT NOT NULL DEFAULT 'P2',
+              status TEXT NOT NULL DEFAULT 'published',
+              owner TEXT,
+              version TEXT NOT NULL DEFAULT 'v1',
+              trigger TEXT,
+              summary TEXT,
+              verification TEXT,
+              escalation TEXT,
+              risk_controls TEXT NOT NULL DEFAULT '[]',
+              tags TEXT NOT NULL DEFAULT '[]',
+              related_knowledge TEXT NOT NULL DEFAULT '[]',
+              created_at TEXT,
+              updated_at TEXT,
+              PRIMARY KEY (runbook_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS t_runbook_step (
+              step_id TEXT NOT NULL,
+              runbook_id TEXT NOT NULL,
+              step_order INTEGER NOT NULL DEFAULT 1,
+              title TEXT NOT NULL,
+              action_type TEXT NOT NULL DEFAULT 'check',
+              instruction TEXT NOT NULL,
+              evidence_required TEXT,
+              tool_name TEXT,
+              expected_result TEXT,
+              risk_level TEXT NOT NULL DEFAULT 'low',
+              PRIMARY KEY (step_id)
+            );
             """
         )
         _ensure_column(conn, "t_knowledge_file", "category", "TEXT NOT NULL DEFAULT '未分类'")
@@ -272,12 +307,232 @@ def init_db(db_path: Optional[Path] = None) -> None:
         _ensure_column(conn, "t_knowledge_file_revision", "tags", "TEXT NOT NULL DEFAULT '[]'")
         _ensure_column(conn, "t_knowledge_file_revision", "review_notes", "TEXT")
         _ensure_column(conn, "t_chat_memory", "trace_id", "TEXT")
+        seed_sample_runbooks(conn)
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
     columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
     if column not in columns:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
+def seed_sample_runbooks(conn: sqlite3.Connection) -> None:
+    existing = conn.execute("SELECT COUNT(*) AS count FROM t_runbook").fetchone()
+    if existing and existing["count"]:
+        return
+
+    timestamp = now_text()
+    samples = [
+        {
+            "runbookId": "rb-memory-1401027",
+            "title": "1401027 insufficient memory 训练任务诊断",
+            "service": "Wise",
+            "scenario": "模型任务",
+            "severity": "P2",
+            "status": "published",
+            "owner": "训练平台值班",
+            "version": "v1",
+            "trigger": "训练任务日志出现 1401027、insufficient memory、OOMKilled 或用户反馈显存/内存不足。",
+            "summary": "先确认是否真实 OOM，再区分资源规格不足、batch 配置过大、数据预处理峰值或 checkpoint 加载峰值。",
+            "verification": "小样本复现通过，内存峰值低于 limit 80%，同配置任务连续两次启动成功。",
+            "escalation": "若多个用户同队列集中 OOM 或节点资源异常，升级给 Wise 平台 SRE。",
+            "riskControls": ["扩容、重启、终止任务前必须确认影响范围", "不能编造平台实时日志或指标"],
+            "tags": ["OOM", "Memory", "1401027", "训练任务"],
+            "relatedKnowledge": ["resource-oom.md"],
+            "steps": [
+                {
+                    "title": "确认任务和失败时间",
+                    "actionType": "check",
+                    "instruction": "记录任务 ID、实例 ID、失败时间点和最近一次配置变更。",
+                    "evidenceRequired": "任务 ID、失败时间、用户提交参数",
+                    "toolName": "task_status",
+                    "expectedResult": "可以定位到唯一失败实例。",
+                    "riskLevel": "low",
+                },
+                {
+                    "title": "检查 OOM 事件和资源峰值",
+                    "actionType": "tool",
+                    "instruction": "查询容器事件、memory limit/request、内存峰值和节点剩余资源。",
+                    "evidenceRequired": "OOMKilled 事件、memory peak、limit/request",
+                    "toolName": "resource_metrics",
+                    "expectedResult": "判断是否超过容器限制或节点资源不足。",
+                    "riskLevel": "low",
+                },
+                {
+                    "title": "压低内存峰值后复现",
+                    "actionType": "manual",
+                    "instruction": "降低 batch size、num_workers、prefetch factor，关闭不必要缓存后用小样本复现。",
+                    "evidenceRequired": "复现配置和运行结果",
+                    "toolName": "",
+                    "expectedResult": "若复现成功，说明主要是任务侧峰值配置问题。",
+                    "riskLevel": "medium",
+                },
+                {
+                    "title": "确认后再调整规格",
+                    "actionType": "confirm",
+                    "instruction": "只有证据表明资源规格不足时，才申请扩容或调整资源规格。",
+                    "evidenceRequired": "资源峰值趋势和负责人确认",
+                    "toolName": "",
+                    "expectedResult": "扩容动作有审批和回退方案。",
+                    "riskLevel": "high",
+                },
+            ],
+        },
+        {
+            "runbookId": "rb-scheduling-pending",
+            "title": "训练任务 Pending / 调度失败诊断",
+            "service": "MTP",
+            "scenario": "调度队列",
+            "severity": "P2",
+            "status": "published",
+            "owner": "调度平台值班",
+            "version": "v1",
+            "trigger": "任务长时间 Pending、队列无资源、节点标签不匹配或调度器拒绝。",
+            "summary": "按队列配额、request/limit、节点标签/污点、镜像拉取和调度事件顺序排查。",
+            "verification": "任务进入 Running，调度事件无新的拒绝原因，队列水位恢复正常。",
+            "escalation": "队列整体阻塞超过 15 分钟或 P1 任务受影响时升级调度负责人。",
+            "riskControls": ["禁止直接抢占其他用户资源", "调整队列配额需负责人确认"],
+            "tags": ["Pending", "Quota", "Scheduler", "队列"],
+            "relatedKnowledge": ["scheduling-pending.md"],
+            "steps": [
+                {
+                    "title": "读取调度事件",
+                    "actionType": "tool",
+                    "instruction": "查询任务 Pending 事件、调度器拒绝原因和队列水位。",
+                    "evidenceRequired": "调度事件、队列配额、任务 request",
+                    "toolName": "scheduling_events",
+                    "expectedResult": "得到明确的拒绝原因或资源等待原因。",
+                    "riskLevel": "low",
+                },
+                {
+                    "title": "核对资源申请",
+                    "actionType": "check",
+                    "instruction": "确认 CPU/GPU/Memory request 是否超过队列或单节点可用资源。",
+                    "evidenceRequired": "资源 request/limit 和节点可用资源",
+                    "toolName": "resource_metrics",
+                    "expectedResult": "判断是否为任务规格过大。",
+                    "riskLevel": "low",
+                },
+                {
+                    "title": "确认节点选择条件",
+                    "actionType": "check",
+                    "instruction": "检查 nodeSelector、affinity、taints/tolerations 和 GPU 型号约束。",
+                    "evidenceRequired": "任务调度配置和节点标签",
+                    "toolName": "task_status",
+                    "expectedResult": "确认是否存在标签或污点不匹配。",
+                    "riskLevel": "low",
+                },
+                {
+                    "title": "升级或调整队列",
+                    "actionType": "confirm",
+                    "instruction": "若确认为队列资源不足，提交配额调整或业务排队建议。",
+                    "evidenceRequired": "队列水位、影响用户、负责人确认",
+                    "toolName": "",
+                    "expectedResult": "配额调整有审批记录。",
+                    "riskLevel": "high",
+                },
+            ],
+        },
+        {
+            "runbookId": "rb-image-runtime",
+            "title": "镜像 / CUDA / 依赖启动失败诊断",
+            "service": "MEP",
+            "scenario": "运行环境",
+            "severity": "P3",
+            "status": "draft",
+            "owner": "镜像平台值班",
+            "version": "v0.1",
+            "trigger": "任务启动阶段出现 ImportError、CUDA mismatch、镜像拉取失败或依赖版本不兼容。",
+            "summary": "对比成功任务与失败任务的镜像 digest、CUDA/驱动、启动命令和依赖包版本。",
+            "verification": "固定镜像 digest 后小样本启动成功，关键依赖版本与基线一致。",
+            "escalation": "基础镜像批量失败时升级镜像平台负责人。",
+            "riskControls": ["生产镜像回滚需确认影响范围", "不要使用 latest 作为长期修复"],
+            "tags": ["Image", "CUDA", "Dependency"],
+            "relatedKnowledge": ["runtime-image.md"],
+            "steps": [
+                {
+                    "title": "锁定镜像版本",
+                    "actionType": "tool",
+                    "instruction": "查询失败任务的镜像 tag、digest、启动命令和最近变更记录。",
+                    "evidenceRequired": "image tag/digest、启动命令",
+                    "toolName": "image_version",
+                    "expectedResult": "明确当前运行镜像。",
+                    "riskLevel": "low",
+                },
+                {
+                    "title": "对比成功任务",
+                    "actionType": "check",
+                    "instruction": "找同项目最近一次成功任务，对比镜像 digest、CUDA、驱动和依赖版本。",
+                    "evidenceRequired": "成功任务配置和失败任务配置",
+                    "toolName": "task_status",
+                    "expectedResult": "定位关键版本差异。",
+                    "riskLevel": "low",
+                },
+                {
+                    "title": "稳定镜像回归",
+                    "actionType": "manual",
+                    "instruction": "用上一个稳定镜像或固定 digest 做小样本回归验证。",
+                    "evidenceRequired": "回归任务结果",
+                    "toolName": "",
+                    "expectedResult": "验证是否由镜像变更引发。",
+                    "riskLevel": "medium",
+                },
+            ],
+        },
+    ]
+
+    for item in samples:
+        conn.execute(
+            """
+            INSERT INTO t_runbook(
+              runbook_id, title, service, scenario, severity, status, owner, version,
+              trigger, summary, verification, escalation, risk_controls, tags,
+              related_knowledge, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                item["runbookId"],
+                item["title"],
+                item["service"],
+                item["scenario"],
+                item["severity"],
+                item["status"],
+                item["owner"],
+                item["version"],
+                item["trigger"],
+                item["summary"],
+                item["verification"],
+                item["escalation"],
+                json.dumps(item["riskControls"], ensure_ascii=False),
+                json.dumps(item["tags"], ensure_ascii=False),
+                json.dumps(item["relatedKnowledge"], ensure_ascii=False),
+                timestamp,
+                timestamp,
+            ),
+        )
+        for index, step in enumerate(item["steps"], start=1):
+            conn.execute(
+                """
+                INSERT INTO t_runbook_step(
+                  step_id, runbook_id, step_order, title, action_type, instruction,
+                  evidence_required, tool_name, expected_result, risk_level
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    f"{item['runbookId']}-step-{index}",
+                    item["runbookId"],
+                    index,
+                    step["title"],
+                    step["actionType"],
+                    step["instruction"],
+                    step["evidenceRequired"],
+                    step["toolName"],
+                    step["expectedResult"],
+                    step["riskLevel"],
+                ),
+            )
 
 
 def check_db(db_path: Optional[Path] = None) -> Dict[str, Any]:
@@ -1498,6 +1753,232 @@ def list_ab_experiments(experiment_id: Optional[str] = None) -> List[Dict[str, A
         }
         for row in rows
     ]
+
+
+def _runbook_from_row(row: sqlite3.Row, steps: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    return {
+        "runbookId": row["runbook_id"],
+        "title": row["title"],
+        "service": row["service"],
+        "scenario": row["scenario"],
+        "severity": row["severity"],
+        "status": row["status"],
+        "owner": row["owner"],
+        "version": row["version"],
+        "trigger": row["trigger"],
+        "summary": row["summary"],
+        "verification": row["verification"],
+        "escalation": row["escalation"],
+        "riskControls": safe_json_loads(row["risk_controls"], []),
+        "tags": safe_json_loads(row["tags"], []),
+        "relatedKnowledge": safe_json_loads(row["related_knowledge"], []),
+        "createdAt": row["created_at"],
+        "updatedAt": row["updated_at"],
+        "steps": steps or [],
+    }
+
+
+def _runbook_step_from_row(row: sqlite3.Row) -> Dict[str, Any]:
+    return {
+        "stepId": row["step_id"],
+        "runbookId": row["runbook_id"],
+        "order": row["step_order"],
+        "title": row["title"],
+        "actionType": row["action_type"],
+        "instruction": row["instruction"],
+        "evidenceRequired": row["evidence_required"],
+        "toolName": row["tool_name"],
+        "expectedResult": row["expected_result"],
+        "riskLevel": row["risk_level"],
+    }
+
+
+def list_runbooks(
+    status: Optional[str] = None,
+    service: Optional[str] = None,
+    scenario: Optional[str] = None,
+    query: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    where: List[str] = []
+    params: List[Any] = []
+    if status:
+        where.append("status = ?")
+        params.append(status)
+    if service:
+        where.append("service = ?")
+        params.append(service)
+    if scenario:
+        where.append("scenario = ?")
+        params.append(scenario)
+    if query:
+        like = f"%{query}%"
+        where.append("(title LIKE ? OR trigger LIKE ? OR summary LIKE ? OR tags LIKE ?)")
+        params.extend([like, like, like, like])
+    where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+    with connect() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT runbook_id, title, service, scenario, severity, status, owner, version,
+                   trigger, summary, verification, escalation, risk_controls, tags,
+                   related_knowledge, created_at, updated_at
+            FROM t_runbook
+            {where_sql}
+            ORDER BY
+              CASE status WHEN 'review' THEN 0 WHEN 'draft' THEN 1 WHEN 'published' THEN 2 ELSE 3 END,
+              CASE severity WHEN 'P0' THEN 0 WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 WHEN 'P3' THEN 3 ELSE 4 END,
+              updated_at DESC
+            """,
+            params,
+        ).fetchall()
+        counts = {
+            row["runbook_id"]: row["step_count"]
+            for row in conn.execute(
+                "SELECT runbook_id, COUNT(*) AS step_count FROM t_runbook_step GROUP BY runbook_id"
+            ).fetchall()
+        }
+    result = []
+    for row in rows:
+        item = _runbook_from_row(row)
+        item["stepCount"] = counts.get(row["runbook_id"], 0)
+        result.append(item)
+    return result
+
+
+def get_runbook(runbook_id: str) -> Optional[Dict[str, Any]]:
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT runbook_id, title, service, scenario, severity, status, owner, version,
+                   trigger, summary, verification, escalation, risk_controls, tags,
+                   related_knowledge, created_at, updated_at
+            FROM t_runbook
+            WHERE runbook_id = ?
+            """,
+            (runbook_id,),
+        ).fetchone()
+        if not row:
+            return None
+        step_rows = conn.execute(
+            """
+            SELECT step_id, runbook_id, step_order, title, action_type, instruction,
+                   evidence_required, tool_name, expected_result, risk_level
+            FROM t_runbook_step
+            WHERE runbook_id = ?
+            ORDER BY step_order ASC, rowid ASC
+            """,
+            (runbook_id,),
+        ).fetchall()
+    return _runbook_from_row(row, [_runbook_step_from_row(step) for step in step_rows])
+
+
+def upsert_runbook(
+    title: str,
+    service: str = "Wise",
+    scenario: str = "模型任务",
+    severity: str = "P2",
+    status: str = "draft",
+    owner: Optional[str] = None,
+    version: str = "v1",
+    trigger: Optional[str] = None,
+    summary: Optional[str] = None,
+    verification: Optional[str] = None,
+    escalation: Optional[str] = None,
+    risk_controls: Optional[List[str]] = None,
+    tags: Optional[List[str]] = None,
+    related_knowledge: Optional[List[str]] = None,
+    steps: Optional[List[Dict[str, Any]]] = None,
+    runbook_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    timestamp = now_text()
+    effective_id = runbook_id or str(uuid.uuid4())
+    with connect() as conn:
+        existing = conn.execute("SELECT created_at FROM t_runbook WHERE runbook_id = ?", (effective_id,)).fetchone()
+        created_at = existing["created_at"] if existing else timestamp
+        conn.execute(
+            """
+            INSERT INTO t_runbook(
+              runbook_id, title, service, scenario, severity, status, owner, version,
+              trigger, summary, verification, escalation, risk_controls, tags,
+              related_knowledge, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(runbook_id)
+            DO UPDATE SET
+              title = excluded.title,
+              service = excluded.service,
+              scenario = excluded.scenario,
+              severity = excluded.severity,
+              status = excluded.status,
+              owner = excluded.owner,
+              version = excluded.version,
+              trigger = excluded.trigger,
+              summary = excluded.summary,
+              verification = excluded.verification,
+              escalation = excluded.escalation,
+              risk_controls = excluded.risk_controls,
+              tags = excluded.tags,
+              related_knowledge = excluded.related_knowledge,
+              updated_at = excluded.updated_at
+            """,
+            (
+                effective_id,
+                title,
+                service,
+                scenario,
+                severity,
+                status,
+                owner,
+                version,
+                trigger,
+                summary,
+                verification,
+                escalation,
+                json.dumps(risk_controls or [], ensure_ascii=False),
+                json.dumps(tags or [], ensure_ascii=False),
+                json.dumps(related_knowledge or [], ensure_ascii=False),
+                created_at,
+                timestamp,
+            ),
+        )
+        conn.execute("DELETE FROM t_runbook_step WHERE runbook_id = ?", (effective_id,))
+        for index, step in enumerate(steps or [], start=1):
+            conn.execute(
+                """
+                INSERT INTO t_runbook_step(
+                  step_id, runbook_id, step_order, title, action_type, instruction,
+                  evidence_required, tool_name, expected_result, risk_level
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    step.get("stepId") or str(uuid.uuid4()),
+                    effective_id,
+                    int(step.get("order") or index),
+                    step.get("title") or f"步骤 {index}",
+                    step.get("actionType") or "check",
+                    step.get("instruction") or "",
+                    step.get("evidenceRequired"),
+                    step.get("toolName"),
+                    step.get("expectedResult"),
+                    step.get("riskLevel") or "low",
+                ),
+            )
+    return get_runbook(effective_id) or {}
+
+
+def update_runbook_status(runbook_id: str, status: str) -> Optional[Dict[str, Any]]:
+    allowed_statuses = {"draft", "review", "published", "archived"}
+    if status not in allowed_statuses:
+        raise ValueError(f"Unsupported runbook status: {status}")
+    with connect() as conn:
+        row = conn.execute("SELECT runbook_id FROM t_runbook WHERE runbook_id = ?", (runbook_id,)).fetchone()
+        if not row:
+            return None
+        conn.execute(
+            "UPDATE t_runbook SET status = ?, updated_at = ? WHERE runbook_id = ?",
+            (status, now_text(), runbook_id),
+        )
+    return get_runbook(runbook_id)
 
 
 def _date_range(start_date: str, end_date: str) -> List[str]:

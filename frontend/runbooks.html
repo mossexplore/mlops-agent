@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Wise MLOps Runbooks</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/runbooks.css" />
+  </head>
+  <body>
+    <div class="app-background" aria-hidden="true"></div>
+    <main class="runbook-shell">
+      <aside class="runbook-side">
+        <header class="brand">
+          <div class="brand-mark">W</div>
+          <div>
+            <h1>Wise MLOps Agent</h1>
+            <p>Operational Runbooks</p>
+          </div>
+        </header>
+        <nav class="nav-links">
+          <a href="/">诊断会话</a>
+          <a href="/knowledge">知识库</a>
+          <a href="/runbooks" class="active">Runbook</a>
+          <a href="/ops">运营看板</a>
+          <a href="/quality">质量闭环</a>
+          <button id="logoutButton" class="nav-logout" type="button">退出</button>
+        </nav>
+
+        <section class="runbook-filter-panel">
+          <div class="panel-title">
+            <span>Runbook 流程</span>
+            <button id="refreshRunbooks" class="ghost-button" type="button">刷新</button>
+          </div>
+          <input id="runbookQuery" placeholder="搜索标题、触发条件或标签" />
+          <select id="runbookStatusFilter">
+            <option value="">全部状态</option>
+            <option value="published">已发布</option>
+            <option value="draft">草稿</option>
+            <option value="review">待审核</option>
+            <option value="archived">已归档</option>
+          </select>
+          <div id="runbookList" class="runbook-list"></div>
+        </section>
+      </aside>
+
+      <section class="runbook-workspace">
+        <header class="runbook-hero">
+          <div>
+            <p>Runbook · Tool Intent · Guardrail</p>
+            <h2>诊断 Runbook 编排</h2>
+          </div>
+          <div class="status-strip">
+            <span>Checklist</span>
+            <span>Evidence</span>
+            <span>Approval</span>
+          </div>
+        </header>
+
+        <section class="runbook-grid">
+          <form id="runbookForm" class="runbook-editor">
+            <div class="runbook-toolbar">
+              <div>
+                <p id="runbookMode">新增 / 更新 Runbook</p>
+                <h3 id="runbookHeading">诊断流程元数据</h3>
+                <span id="runbookMetaLine">选择左侧样例或创建一条新流程</span>
+              </div>
+              <div class="runbook-actions">
+                <button id="newRunbook" class="secondary-button" type="button">新建</button>
+                <button id="saveRunbook" type="submit">保存</button>
+              </div>
+            </div>
+
+            <div class="runbook-fields">
+              <label>
+                标题
+                <input id="runbookTitle" required />
+              </label>
+              <label>
+                服务
+                <select id="runbookService">
+                  <option>Wise</option>
+                  <option>MTP</option>
+                  <option>MEP</option>
+                </select>
+              </label>
+              <label>
+                场景
+                <input id="runbookScenario" placeholder="例如：模型任务 / 调度队列" />
+              </label>
+              <label>
+                严重级别
+                <select id="runbookSeverity">
+                  <option>P0</option>
+                  <option>P1</option>
+                  <option selected>P2</option>
+                  <option>P3</option>
+                  <option>P4</option>
+                </select>
+              </label>
+              <label>
+                状态
+                <select id="runbookStatus">
+                  <option value="draft">草稿</option>
+                  <option value="review">待审核</option>
+                  <option value="published">已发布</option>
+                  <option value="archived">已归档</option>
+                </select>
+              </label>
+              <label>
+                版本
+                <input id="runbookVersion" value="v1" />
+              </label>
+              <label>
+                负责人
+                <input id="runbookOwner" placeholder="例如：训练平台值班" />
+              </label>
+              <label>
+                标签
+                <input id="runbookTags" placeholder="逗号分隔，例如：OOM,Memory" />
+              </label>
+              <label class="span-2">
+                触发条件
+                <textarea id="runbookTrigger" rows="3"></textarea>
+              </label>
+              <label class="span-2">
+                流程摘要
+                <textarea id="runbookSummary" rows="3"></textarea>
+              </label>
+              <label class="span-2">
+                验证方式
+                <textarea id="runbookVerification" rows="2"></textarea>
+              </label>
+              <label class="span-2">
+                升级路径
+                <textarea id="runbookEscalation" rows="2"></textarea>
+              </label>
+              <label>
+                风险护栏
+                <input id="runbookRiskControls" placeholder="逗号分隔" />
+              </label>
+              <label>
+                关联知识
+                <input id="runbookRelatedKnowledge" placeholder="逗号分隔，例如：resource-oom.md" />
+              </label>
+            </div>
+
+            <section class="step-editor">
+              <div class="section-head">
+                <div>
+                  <p>Executable Flow</p>
+                  <h3>诊断步骤</h3>
+                </div>
+                <button id="addStep" class="secondary-button" type="button">新增步骤</button>
+              </div>
+              <div id="stepList" class="step-list"></div>
+            </section>
+          </form>
+
+          <aside class="runbook-preview">
+            <section class="preview-card">
+              <div class="section-head">
+                <div>
+                  <p>Current Flow</p>
+                  <h3>执行视图</h3>
+                </div>
+              </div>
+              <div id="runbookPreview"></div>
+            </section>
+            <section class="preview-card">
+              <div class="section-head">
+                <div>
+                  <p>Lifecycle</p>
+                  <h3>状态流转</h3>
+                </div>
+              </div>
+              <div class="lifecycle-actions">
+                <button type="button" data-runbook-status="draft">转草稿</button>
+                <button type="button" data-runbook-status="review">提交审核</button>
+                <button type="button" data-runbook-status="published">发布</button>
+                <button type="button" data-runbook-status="archived">归档</button>
+              </div>
+            </section>
+          </aside>
+        </section>
+      </section>
+    </main>
+    <div id="runbookToast" class="runbook-toast" role="status" aria-live="polite"></div>
+    <script src="/static/session.js"></script>
+    <script src="/static/runbooks.js"></script>
+  </body>
+</html>
