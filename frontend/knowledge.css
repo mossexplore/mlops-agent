@@ -7,7 +7,7 @@
   height: 100dvh;
   min-height: 0;
   overflow: hidden;
-  color: #edf2f7;
+  color: var(--text-main);
 }
 
 .knowledge-side {
@@ -17,18 +17,16 @@
   min-height: 0;
   overflow: hidden;
   padding: 18px;
-  background: rgba(12, 18, 35, 0.82);
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(24px);
+  background: rgba(15, 23, 42, 0.94);
+  border-right: 1px solid var(--border-subtle);
 }
 
 .knowledge-list-panel,
 .knowledge-editor,
 .knowledge-search-panel {
-  border: 1px solid rgba(148, 163, 184, 0.18);
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.58);
-  backdrop-filter: blur(18px);
+  background: rgba(17, 24, 39, 0.78);
 }
 
 .knowledge-list-panel {
@@ -51,7 +49,7 @@
   display: block;
   border: 1px solid transparent;
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.52);
+  background: rgba(15, 23, 42, 0.68);
   padding: 12px;
   text-align: left;
   color: inherit;
@@ -61,8 +59,8 @@
 
 .knowledge-file:hover,
 .knowledge-file.active {
-  border-color: rgba(20, 184, 166, 0.42);
-  background: rgba(20, 184, 166, 0.13);
+  border-color: rgba(56, 189, 248, 0.4);
+  background: rgba(56, 189, 248, 0.1);
 }
 
 .knowledge-file:hover {
@@ -134,15 +132,14 @@
   gap: 18px;
   min-height: 78px;
   padding: 18px 30px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(10, 15, 30, 0.52);
-  backdrop-filter: blur(18px);
+  border-bottom: 1px solid var(--border-subtle);
+  background: rgba(15, 23, 42, 0.78);
 }
 
 .knowledge-hero p,
 .editor-head p {
   margin: 0 0 4px;
-  color: #6b7280;
+  color: var(--text-soft);
   font-size: 12px;
 }
 
@@ -199,9 +196,8 @@
   z-index: 4;
   margin: -18px -18px 0;
   padding: 16px 18px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
-  background: rgba(15, 23, 42, 0.92);
-  backdrop-filter: blur(18px);
+  border-bottom: 1px solid var(--border-subtle);
+  background: rgba(17, 24, 39, 0.96);
 }
 
 .document-title-block {
@@ -271,14 +267,14 @@
 .lifecycle-actions button {
   min-height: 38px;
   padding: 0 14px;
-  background: #14b8a6;
+  background: var(--accent-strong);
   color: #ffffff;
-  box-shadow: 0 12px 28px rgba(20, 184, 166, 0.2);
+  box-shadow: 0 12px 28px rgba(14, 165, 233, 0.2);
 }
 
 .secondary-button,
 .lifecycle-actions button {
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(148, 163, 184, 0.1);
   color: #cbd5e1;
   box-shadow: none;
 }
@@ -286,9 +282,9 @@
 .workflow-bar {
   display: grid;
   gap: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
-  background: linear-gradient(135deg, rgba(20, 184, 166, 0.12), rgba(59, 130, 246, 0.08));
+  background: rgba(56, 189, 248, 0.08);
   padding: 12px;
 }
 
@@ -301,9 +297,9 @@
 
 .governance-summary div {
   min-width: 0;
-  border: 1px solid rgba(148, 163, 184, 0.14);
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.035);
+  background: rgba(15, 23, 42, 0.62);
   padding: 10px;
 }
 

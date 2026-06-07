@@ -1,8 +1,25 @@
 :root {
   color-scheme: dark;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: #0f0c29;
-  color: #e4e6eb;
+  --bg-page: #0b1020;
+  --bg-shell: #0f172a;
+  --bg-surface: #111827;
+  --bg-surface-muted: #151f32;
+  --bg-field: #182235;
+  --border-subtle: #253149;
+  --border-strong: #334155;
+  --text-main: #e5e7eb;
+  --text-muted: #94a3b8;
+  --text-soft: #64748b;
+  --accent: #38bdf8;
+  --accent-strong: #0ea5e9;
+  --accent-muted: rgba(56, 189, 248, 0.14);
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --danger: #fb7185;
+  --shadow-panel: 0 18px 48px rgba(2, 6, 23, 0.24);
+  background: var(--bg-page);
+  color: var(--text-main);
 }
 
 html {
@@ -18,7 +35,7 @@ body {
   margin: 0;
   height: 100%;
   overflow: hidden;
-  background: #0f0c29;
+  background: var(--bg-page);
 }
 
 button,
@@ -38,9 +55,9 @@ button {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background: linear-gradient(135deg, #0f0c29 0%, #302b63 52%, #24243e 100%);
-  background-size: 180% 180%;
-  animation: gradient-shift 15s ease infinite;
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(11, 16, 32, 0.98)),
+    radial-gradient(circle at 85% 0%, rgba(56, 189, 248, 0.1), transparent 34%);
 }
 
 @keyframes gradient-shift {
@@ -58,7 +75,7 @@ button {
   height: 100dvh;
   min-height: 0;
   overflow: hidden;
-  color: #e4e6eb;
+  color: var(--text-main);
 }
 
 .sidebar {
@@ -68,9 +85,8 @@ button {
   min-height: 0;
   overflow: hidden;
   padding: 18px;
-  background: rgba(255, 255, 255, 0.05);
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(24px);
+  background: rgba(15, 23, 42, 0.94);
+  border-right: 1px solid var(--border-subtle);
 }
 
 .brand {
@@ -86,10 +102,10 @@ button {
   width: 40px;
   height: 40px;
   border-radius: 8px;
-  background: linear-gradient(135deg, #818cf8, #c084fc);
+  background: linear-gradient(135deg, #0ea5e9, #14b8a6);
   color: #ffffff;
   font-weight: 900;
-  box-shadow: 0 14px 30px rgba(129, 140, 248, 0.25);
+  box-shadow: 0 12px 28px rgba(14, 165, 233, 0.18);
 }
 
 .brand h1 {
@@ -100,7 +116,7 @@ button {
 
 .brand p {
   margin: 3px 0 0;
-  color: #9ca3af;
+  color: var(--text-muted);
   font-size: 12px;
 }
 
@@ -115,20 +131,20 @@ button {
   display: grid;
   place-items: center;
   min-height: 36px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
-  color: #9ca3af;
+  color: var(--text-muted);
   text-decoration: none;
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(15, 23, 42, 0.62);
   font-size: 13px;
 }
 
 .nav-links a:hover,
 .nav-links a.active,
 .nav-logout:hover {
-  border-color: rgba(129, 140, 248, 0.36);
+  border-color: rgba(56, 189, 248, 0.42);
   color: #ffffff;
-  background: rgba(129, 140, 248, 0.14);
+  background: rgba(56, 189, 248, 0.12);
 }
 
 .nav-logout {
@@ -141,9 +157,9 @@ button {
 
 .context-panel,
 .history-panel {
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.045);
+  background: rgba(17, 24, 39, 0.7);
 }
 
 .context-panel {
@@ -165,7 +181,7 @@ button {
 label {
   display: grid;
   gap: 6px;
-  color: #9ca3af;
+  color: var(--text-muted);
   font-size: 12px;
 }
 
@@ -173,9 +189,9 @@ input,
 select,
 textarea {
   width: 100%;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--bg-field);
   color: #ffffff;
   outline: none;
 }
@@ -199,9 +215,9 @@ textarea::placeholder {
 input:focus,
 select:focus,
 textarea:focus {
-  border-color: rgba(129, 140, 248, 0.55);
-  background: rgba(255, 255, 255, 0.09);
-  box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.16);
+  border-color: rgba(56, 189, 248, 0.62);
+  background: #1b2638;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.14);
 }
 
 .switch {
@@ -215,7 +231,7 @@ textarea:focus {
   width: 16px;
   height: 16px;
   margin: 0;
-  accent-color: #818cf8;
+  accent-color: var(--accent);
 }
 
 .icon-button {
@@ -224,15 +240,15 @@ textarea:focus {
   width: 30px;
   height: 30px;
   padding: 0;
-  background: rgba(129, 140, 248, 0.16);
-  color: #a5b4fc;
+  background: var(--accent-muted);
+  color: #bae6fd;
   font-size: 22px;
   line-height: 1;
   transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
 }
 
 .icon-button:hover {
-  background: #6366f1;
+  background: var(--accent-strong);
   color: #ffffff;
   transform: translateY(-1px);
 }
@@ -240,8 +256,8 @@ textarea:focus {
 .ghost-button {
   height: 30px;
   padding: 0 10px;
-  background: rgba(255, 255, 255, 0.06);
-  color: #c7d2fe;
+  background: rgba(148, 163, 184, 0.1);
+  color: #cbd5e1;
   font-size: 12px;
 }
 
@@ -278,7 +294,7 @@ textarea:focus {
 .messages::-webkit-scrollbar-thumb,
 .composer textarea::-webkit-scrollbar-thumb {
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(148, 163, 184, 0.24);
 }
 
 .history::-webkit-scrollbar-thumb:hover,
@@ -311,8 +327,8 @@ textarea:focus {
 
 .history-item:hover,
 .history-item.active {
-  border-color: rgba(129, 140, 248, 0.32);
-  background: rgba(129, 140, 248, 0.16);
+  border-color: rgba(56, 189, 248, 0.34);
+  background: rgba(56, 189, 248, 0.1);
 }
 
 .history-item:hover {
@@ -320,8 +336,8 @@ textarea:focus {
 }
 
 .history-item.active::before {
-  background: #818cf8;
-  box-shadow: 0 0 0 4px rgba(129, 140, 248, 0.16);
+  background: var(--accent);
+  box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.14);
 }
 
 .history-item strong,
@@ -361,14 +377,13 @@ textarea:focus {
   gap: 18px;
   min-height: 78px;
   padding: 18px 30px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(15, 12, 41, 0.35);
-  backdrop-filter: blur(18px);
+  border-bottom: 1px solid var(--border-subtle);
+  background: rgba(15, 23, 42, 0.78);
 }
 
 .topbar p {
   margin: 0 0 4px;
-  color: #6b7280;
+  color: var(--text-soft);
   font-size: 12px;
 }
 
@@ -387,10 +402,10 @@ textarea:focus {
 }
 
 .status-strip span {
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  color: #c7d2fe;
+  background: rgba(15, 23, 42, 0.74);
+  color: #bae6fd;
   padding: 7px 10px;
   font-size: 12px;
 }
@@ -422,10 +437,10 @@ textarea:focus {
   place-items: center;
   width: 64px;
   height: 64px;
-  border: 1px solid rgba(129, 140, 248, 0.22);
+  border: 1px solid rgba(56, 189, 248, 0.24);
   border-radius: 8px;
-  background: rgba(129, 140, 248, 0.1);
-  color: #818cf8;
+  background: rgba(56, 189, 248, 0.1);
+  color: var(--accent);
 }
 
 .terminal-mark svg {
@@ -445,10 +460,7 @@ textarea:focus {
   font-size: clamp(32px, 5vw, 54px);
   font-weight: 900;
   letter-spacing: 0;
-  background: linear-gradient(90deg, #818cf8, #c084fc, #f472b6);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: #f8fafc;
 }
 
 .empty-subtitle {
@@ -468,9 +480,9 @@ textarea:focus {
 }
 
 .empty-tags span {
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.045);
+  background: rgba(17, 24, 39, 0.68);
   padding: 14px 12px;
   color: #d1d5db;
   font-size: 13px;
@@ -478,8 +490,8 @@ textarea:focus {
 }
 
 .empty-tags span:hover {
-  border-color: rgba(129, 140, 248, 0.34);
-  background: rgba(129, 140, 248, 0.12);
+  border-color: rgba(56, 189, 248, 0.34);
+  background: rgba(56, 189, 248, 0.1);
   transform: translateY(-2px);
 }
 
@@ -518,7 +530,7 @@ textarea:focus {
   width: 34px;
   height: 34px;
   border-radius: 8px;
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+  box-shadow: 0 10px 24px rgba(2, 6, 23, 0.22);
 }
 
 .avatar svg {
@@ -528,13 +540,13 @@ textarea:focus {
 }
 
 .avatar.assistant {
-  background: rgba(129, 140, 248, 0.18);
-  outline: 1px solid rgba(129, 140, 248, 0.22);
+  background: rgba(56, 189, 248, 0.14);
+  outline: 1px solid rgba(56, 189, 248, 0.24);
 }
 
 .avatar.user {
-  background: rgba(192, 132, 252, 0.18);
-  outline: 1px solid rgba(192, 132, 252, 0.22);
+  background: rgba(20, 184, 166, 0.14);
+  outline: 1px solid rgba(20, 184, 166, 0.24);
 }
 
 .message-content {
@@ -545,21 +557,20 @@ textarea:focus {
   line-height: 1.75;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  color: #e5e7eb;
-  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.22);
+  color: var(--text-main);
+  box-shadow: var(--shadow-panel);
 }
 
 .user .message-content {
-  border: 1px solid rgba(129, 140, 248, 0.22);
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.34), rgba(168, 85, 247, 0.3));
+  border: 1px solid rgba(56, 189, 248, 0.24);
+  background: #0f3b56;
   color: #ffffff;
   white-space: pre-wrap;
 }
 
 .assistant .message-content {
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.055);
-  backdrop-filter: blur(14px);
+  border: 1px solid var(--border-subtle);
+  background: rgba(17, 24, 39, 0.82);
   white-space: normal;
 }
 
@@ -585,9 +596,9 @@ textarea:focus {
 .assistant .message-content h1 { font-size: 24px; }
 .assistant .message-content h2 { font-size: 21px; }
 .assistant .message-content h3 { font-size: 18px; }
-.assistant .message-content h4 { font-size: 15px; color: #c7d2fe; }
+.assistant .message-content h4 { font-size: 15px; color: #bae6fd; }
 .assistant .message-content h5,
-.assistant .message-content h6 { font-size: 13px; color: #bfdbfe; }
+.assistant .message-content h6 { font-size: 13px; color: #93c5fd; }
 
 .assistant .message-content p {
   margin: 0.45em 0;
@@ -614,9 +625,9 @@ textarea:focus {
 }
 
 .assistant .message-content code {
-  border: 1px solid rgba(129, 140, 248, 0.18);
+  border: 1px solid rgba(56, 189, 248, 0.2);
   border-radius: 6px;
-  background: rgba(15, 23, 42, 0.72);
+  background: rgba(2, 6, 23, 0.62);
   padding: 0.12em 0.35em;
   color: #a7f3d0;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
@@ -626,7 +637,7 @@ textarea:focus {
 .assistant .message-content pre {
   margin: 0.8em 0;
   overflow: auto;
-  border: 1px solid rgba(129, 140, 248, 0.16);
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
   background: rgba(8, 13, 28, 0.82);
   padding: 12px;
@@ -641,10 +652,10 @@ textarea:focus {
 
 .assistant .message-content blockquote {
   margin: 0.75em 0;
-  border-left: 3px solid rgba(129, 140, 248, 0.58);
+  border-left: 3px solid rgba(56, 189, 248, 0.62);
   padding: 0.2em 0 0.2em 0.85em;
   color: #cbd5e1;
-  background: rgba(129, 140, 248, 0.06);
+  background: rgba(56, 189, 248, 0.07);
 }
 
 .assistant .message-content a {
@@ -655,9 +666,9 @@ textarea:focus {
 
 .diagnostic-trace {
   width: min(720px, 100%);
-  border: 1px solid rgba(129, 140, 248, 0.16);
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
-  background: rgba(12, 18, 38, 0.58);
+  background: rgba(15, 23, 42, 0.78);
   padding: 12px;
   color: #cbd5e1;
 }
@@ -680,9 +691,9 @@ textarea:focus {
 .trace-head button {
   min-height: 28px;
   padding: 0 9px;
-  border: 1px solid rgba(129, 140, 248, 0.22);
-  background: rgba(129, 140, 248, 0.1);
-  color: #c7d2fe;
+  border: 1px solid rgba(56, 189, 248, 0.24);
+  background: rgba(56, 189, 248, 0.1);
+  color: #bae6fd;
   font-size: 11px;
 }
 
@@ -741,10 +752,10 @@ textarea:focus {
   display: flex;
   justify-content: space-between;
   gap: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
   padding: 8px 9px;
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(15, 23, 42, 0.62);
   font-size: 12px;
 }
 
@@ -786,13 +797,13 @@ textarea:focus {
 
 .feedback button:hover {
   transform: translateY(-1px);
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(148, 163, 184, 0.1);
 }
 
 .feedback button[data-feedback="like"]:hover,
 .feedback button[data-feedback="like"].active {
-  color: #818cf8;
-  background: rgba(129, 140, 248, 0.1);
+  color: var(--accent);
+  background: var(--accent-muted);
 }
 
 .feedback button[data-feedback="unlike"]:hover,
@@ -802,7 +813,7 @@ textarea:focus {
 }
 
 .feedback button:focus-visible {
-  outline: 2px solid rgba(129, 140, 248, 0.45);
+  outline: 2px solid rgba(56, 189, 248, 0.45);
   outline-offset: 2px;
 }
 
@@ -813,7 +824,7 @@ textarea:focus {
   min-height: 118px;
   flex-shrink: 0;
   padding: 18px 30px 16px;
-  background: linear-gradient(to top, #0f0c29 0%, rgba(15, 12, 41, 0.92) 68%, transparent 100%);
+  background: linear-gradient(to top, #0b1020 0%, rgba(11, 16, 32, 0.92) 68%, transparent 100%);
 }
 
 .composer-box {
@@ -823,10 +834,9 @@ textarea:focus {
   gap: 8px;
   max-width: 900px;
   margin: 0 auto;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.055);
-  backdrop-filter: blur(18px);
+  background: rgba(17, 24, 39, 0.9);
   padding: 8px;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.24);
 }
@@ -856,15 +866,15 @@ textarea:focus {
   height: 46px;
   align-self: end;
   margin-bottom: 5px;
-  background: #6366f1;
+  background: var(--accent-strong);
   color: #ffffff;
-  box-shadow: 0 12px 28px rgba(99, 102, 241, 0.28);
+  box-shadow: 0 12px 28px rgba(14, 165, 233, 0.24);
   transition: transform 0.2s ease, opacity 0.2s ease, background 0.2s ease;
 }
 
 #send:hover {
   transform: scale(1.04);
-  background: #7c3aed;
+  background: #0284c7;
 }
 
 #send:disabled {
@@ -888,7 +898,7 @@ textarea:focus {
 .send-loader {
   width: 18px;
   height: 18px;
-  border: 2px solid rgba(255, 255, 255, 0.34);
+  border: 2px solid rgba(255, 255, 255, 0.32);
   border-top-color: #ffffff;
   border-radius: 999px;
   animation: spin 0.75s linear infinite;
@@ -906,13 +916,12 @@ dialog {
   border-radius: 8px;
   padding: 0;
   color: #e5e7eb;
-  background: rgba(20, 18, 48, 0.96);
+  background: rgba(17, 24, 39, 0.98);
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.4);
 }
 
 dialog::backdrop {
   background: rgba(6, 8, 18, 0.66);
-  backdrop-filter: blur(8px);
 }
 
 .feedback-form {
@@ -943,18 +952,18 @@ dialog::backdrop {
   align-items: center;
   width: auto;
   gap: 7px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
   padding: 7px 10px;
   color: #d1d5db;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(15, 23, 42, 0.68);
 }
 
 .chips input {
   width: 15px;
   height: 15px;
   margin: 0;
-  accent-color: #818cf8;
+  accent-color: var(--accent);
 }
 
 .dialog-actions {
@@ -966,12 +975,12 @@ dialog::backdrop {
 .dialog-actions button {
   height: 38px;
   padding: 0 14px;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(148, 163, 184, 0.1);
   color: #e5e7eb;
 }
 
 .dialog-actions .primary {
-  background: #6366f1;
+  background: var(--accent-strong);
   color: #ffffff;
 }
 
