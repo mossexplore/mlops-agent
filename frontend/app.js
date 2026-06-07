@@ -3,6 +3,7 @@ const state = {
   lastAssistantMessageId: null,
   lastQueryMessageId: null,
   pendingFeedbackMessageId: null,
+  abortController: null,
 };
 
 const els = {
@@ -17,6 +18,7 @@ const els = {
   query: document.querySelector("#query"),
   composer: document.querySelector("#composer"),
   send: document.querySelector("#send"),
+  stop: document.querySelector("#stop"),
   history: document.querySelector("#history"),
   newConversation: document.querySelector("#newConversation"),
   loadHistory: document.querySelector("#loadHistory"),
@@ -25,6 +27,7 @@ const els = {
   feedbackText: document.querySelector("#feedbackText"),
   submitUnlike: document.querySelector("#submitUnlike"),
   emptyState: document.querySelector("#emptyState"),
+  scrollBottom: document.querySelector("#scrollBottom"),
 };
 
 const sendIcon = `
@@ -35,6 +38,14 @@ const sendIcon = `
 `;
 
 let conversations = [];
+
+const quickPrompts = [
+  ["Memory OOM", "1401027 insufficient memory 报错"],
+  ["Pending", "训练任务 Pending 很久，帮我按 Runbook 排查"],
+  ["GPU 低利用", "GPU 利用率很低但任务很慢，应该看哪些证据"],
+  ["Checkpoint", "checkpoint 加载阶段失败，如何定位原因"],
+  ["Dataset", "数据集读取很慢导致训练卡住，怎么排查"],
+];
 
 function setConversationLabel() {
   els.conversationLabel.textContent = `会话 ${state.conversationId.slice(0, 8)}`;
@@ -59,6 +70,7 @@ function setSendLoading(isLoading) {
   els.send.title = isLoading ? "生成中" : "发送";
   els.send.setAttribute("aria-label", isLoading ? "生成中" : "发送");
   els.send.innerHTML = isLoading ? `<span class="send-loader"></span>` : sendIcon;
+  els.stop.hidden = !isLoading;
 }
 
 function feedbackLabel(feedback) {
@@ -175,7 +187,12 @@ function renderMarkdown(markdown) {
   };
 
   const closeCode = () => {
-    html.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+    html.push(`
+      <div class="code-block">
+        <button type="button" data-copy-code>复制</button>
+        <pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>
+      </div>
+    `);
     codeLines = [];
     inCode = false;
   };
@@ -252,8 +269,18 @@ function renderMarkdown(markdown) {
 function setMessageContent(contentNode, type, content) {
   if (type === "assistant") {
     contentNode.innerHTML = renderMarkdown(content);
+    enhanceRunbookChecklist(contentNode);
   } else {
     contentNode.textContent = content;
+  }
+}
+
+function enhanceRunbookChecklist(contentNode) {
+  const stepPattern = /^步骤[一二三四五六七八九十]+[:：]/;
+  for (const item of contentNode.querySelectorAll("li")) {
+    if (!stepPattern.test(item.textContent.trim())) continue;
+    item.classList.add("runbook-step-item");
+    item.parentElement?.classList.add("runbook-checklist");
   }
 }
 
@@ -265,19 +292,24 @@ function renderTracePanel(traceId, diagnosticState = null) {
   return `
     <section class="diagnostic-trace">
       <div class="trace-head">
-        <span>Explainable Diagnosis</span>
+        <button class="trace-toggle" type="button" data-trace-toggle aria-expanded="true">
+          <span aria-hidden="true">⌄</span>
+          <strong>Explainable Diagnosis</strong>
+        </button>
         ${traceId ? `<button type="button" data-trace-detail="${escapeHtml(traceId)}">Trace ${escapeHtml(traceId.slice(0, 8))}</button>` : ""}
       </div>
-      <div class="trace-state">
-        <strong>${escapeHtml(step)}</strong>
-        <span class="risk ${escapeHtml(risk)}">${escapeHtml(risk)}</span>
+      <div class="trace-body">
+        <div class="trace-state">
+          <strong>${escapeHtml(step)}</strong>
+          <span class="risk ${escapeHtml(risk)}">${escapeHtml(risk)}</span>
+        </div>
+        ${
+          questions.length
+            ? `<ul>${questions.slice(0, 3).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+            : ""
+        }
+        <div class="trace-spans" hidden></div>
       </div>
-      ${
-        questions.length
-          ? `<ul>${questions.slice(0, 3).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
-          : ""
-      }
-      <div class="trace-spans" hidden></div>
     </section>
   `;
 }
@@ -349,6 +381,7 @@ function updateTracePanel(messageNode, traceId, diagnosticState) {
 }
 
 function resetConversation() {
+  state.abortController?.abort();
   state.conversationId = crypto.randomUUID();
   state.lastAssistantMessageId = null;
   state.lastQueryMessageId = null;
@@ -373,11 +406,12 @@ function createEmptyState() {
     <div class="empty-title">Wise MLOps Agent</div>
     <p class="empty-subtitle">专业智能诊断伙伴，为模型任务、资源异常和平台日志提供排查建议。</p>
     <div class="empty-tags">
-      <span>Memory</span>
-      <span>OOM</span>
-      <span>GPU</span>
-      <span>Checkpoint</span>
-      <span>Dataset</span>
+      ${quickPrompts
+        .map(
+          ([label, prompt]) =>
+            `<button type="button" data-quick-prompt="${escapeHtml(prompt)}">${escapeHtml(label)}</button>`,
+        )
+        .join("")}
     </div>
   `;
   els.emptyState = node;
@@ -388,6 +422,11 @@ function highlightHistory() {
   for (const item of els.history.querySelectorAll(".history-item")) {
     item.classList.toggle("active", item.dataset.conversationId === state.conversationId);
   }
+}
+
+function updateScrollBottomVisibility() {
+  const distance = els.messages.scrollHeight - els.messages.scrollTop - els.messages.clientHeight;
+  els.scrollBottom.hidden = distance < 180;
 }
 
 async function sendFeedback(messageNode, feedback, reason = null) {
@@ -421,12 +460,15 @@ async function submitChat(event) {
 
   appendMessage("user", query);
   els.query.value = "";
+  const controller = new AbortController();
+  state.abortController = controller;
   setSendLoading(true);
 
   try {
     const response = await fetch("/agent/v1/assistant/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
       body: JSON.stringify({
         query,
         needDeepThinking: els.deepThinking.checked ? 1 : 0,
@@ -471,8 +513,15 @@ async function submitChat(event) {
       }
     }
     await loadHistory();
+  } catch (error) {
+    if (error.name !== "AbortError") {
+      appendMessage("assistant", `请求失败：${error.message || "请稍后重试"}`);
+    }
   } finally {
-    setSendLoading(false);
+    if (state.abortController === controller) {
+      state.abortController = null;
+      setSendLoading(false);
+    }
   }
 }
 
@@ -505,6 +554,7 @@ async function loadHistory() {
 }
 
 async function loadConversation(conversationId) {
+  state.abortController?.abort();
   state.conversationId = conversationId;
   setConversationLabel();
   highlightHistory();
@@ -543,7 +593,37 @@ els.composer.addEventListener("submit", submitChat);
 els.newConversation.addEventListener("click", resetConversation);
 els.loadHistory.addEventListener("click", loadHistory);
 els.historySearch.addEventListener("input", renderHistory);
+els.stop.addEventListener("click", () => {
+  state.abortController?.abort();
+});
+els.messages.addEventListener("scroll", updateScrollBottomVisibility);
+els.scrollBottom.addEventListener("click", () => {
+  els.messages.scrollTo({ top: els.messages.scrollHeight, behavior: "smooth" });
+});
 els.messages.addEventListener("click", async (event) => {
+  const quickPrompt = event.target.closest("button[data-quick-prompt]");
+  if (quickPrompt) {
+    els.query.value = quickPrompt.dataset.quickPrompt || "";
+    els.query.focus();
+    return;
+  }
+
+  const copyCode = event.target.closest("button[data-copy-code]");
+  if (copyCode) {
+    const code = copyCode.closest(".code-block")?.querySelector("code")?.innerText || "";
+    if (!code) return;
+    try {
+      await navigator.clipboard.writeText(code);
+      copyCode.textContent = "已复制";
+    } catch {
+      copyCode.textContent = "复制失败";
+    }
+    window.setTimeout(() => {
+      copyCode.textContent = "复制";
+    }, 1200);
+    return;
+  }
+
   const traceButton = event.target.closest("button[data-trace-detail]");
   if (traceButton) {
     const panel = traceButton.closest(".diagnostic-trace");
@@ -579,6 +659,18 @@ els.messages.addEventListener("click", async (event) => {
     } catch (error) {
       spans.innerHTML = `<div class="trace-loading">${escapeHtml(error.message || "Trace 读取失败")}</div>`;
     }
+    return;
+  }
+
+  const traceToggle = event.target.closest("button[data-trace-toggle]");
+  if (traceToggle) {
+    const panel = traceToggle.closest(".diagnostic-trace");
+    const body = panel?.querySelector(".trace-body");
+    if (!body) return;
+    const collapsed = !body.hidden;
+    body.hidden = collapsed;
+    panel.classList.toggle("collapsed", collapsed);
+    traceToggle.setAttribute("aria-expanded", String(!collapsed));
     return;
   }
 

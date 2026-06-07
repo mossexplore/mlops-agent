@@ -1,0 +1,122 @@
+.surface-panel,
+:is(.context-panel, .history-panel, .knowledge-list-panel, .knowledge-editor, .knowledge-search-panel, .runbook-filter-panel, .runbook-editor, .preview-card, .ops-filter-panel, .ops-panel, .metric-card, .quality-card, .metric-tile, .login-card) {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: rgba(17, 24, 39, 0.78);
+  box-shadow: var(--shadow-sm);
+}
+
+.app-sidebar,
+:is(.sidebar, .knowledge-side, .runbook-side, .ops-side, .quality-side) {
+  background: rgba(15, 23, 42, 0.94);
+  border-right: 1px solid var(--border-subtle);
+}
+
+.app-header,
+:is(.topbar, .knowledge-hero, .runbook-hero, .ops-hero, .quality-hero) {
+  border-bottom: 1px solid var(--border-subtle);
+  background: rgba(15, 23, 42, 0.78);
+}
+
+.btn,
+:is(.ghost-button, .secondary-button, .primary-action, #saveKnowledge, #saveRunbook, #loginButton, .knowledge-search button, .lifecycle-actions button, .feedback-actions button, .dialog-actions button) {
+  min-height: 34px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0 12px;
+  color: var(--text-main);
+  background: rgba(148, 163, 184, 0.1);
+  transition: border-color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
+}
+
+.btn:hover,
+:is(.ghost-button, .secondary-button, .primary-action, #saveKnowledge, #saveRunbook, #loginButton, .knowledge-search button, .lifecycle-actions button, .feedback-actions button, .dialog-actions button):hover {
+  border-color: rgba(56, 189, 248, 0.38);
+  background: rgba(56, 189, 248, 0.12);
+  transform: translateY(-1px);
+}
+
+.btn-primary,
+:is(#saveKnowledge, #saveRunbook, #loginButton, .primary-action, .dialog-actions .primary) {
+  border-color: rgba(56, 189, 248, 0.45);
+  background: var(--accent-strong);
+  color: #ffffff;
+  box-shadow: 0 12px 28px rgba(14, 165, 233, 0.2);
+}
+
+.btn-primary:hover,
+:is(#saveKnowledge, #saveRunbook, #loginButton, .primary-action, .dialog-actions .primary):hover {
+  background: var(--accent-hover);
+}
+
+.input-field,
+:is(input, select, textarea) {
+  border-radius: var(--radius-md);
+  border-color: var(--border-subtle);
+  background: var(--bg-field);
+}
+
+.input-field:focus,
+:is(input, select, textarea):focus {
+  border-color: rgba(56, 189, 248, 0.62);
+  box-shadow: var(--shadow-glow);
+}
+
+.badge,
+:is(.status-badge, .risk, .flow-type, .pill, .reason-legend span, .status-strip span) {
+  border-radius: var(--radius-md);
+}
+
+.toast,
+:is(.knowledge-toast, .runbook-toast, .quality-toast) {
+  border: 1px solid rgba(56, 189, 248, 0.36);
+  border-radius: var(--radius-md);
+  background: rgba(15, 23, 42, 0.96);
+  box-shadow: var(--shadow-panel);
+}
+
+.list-item,
+:is(.history-item, .knowledge-file, .runbook-item, .reason-item, .user-row, .unlike-item, .feedback-item, .eval-item, .run-item, .experiment-item, .step-card, .flow-list li) {
+  border-radius: var(--radius-md);
+}
+
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: rgba(148, 163, 184, 0.11);
+}
+
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(226, 232, 240, 0.08), transparent);
+  animation: skeleton-shimmer 1.4s infinite;
+}
+
+.skeleton-text {
+  height: 12px;
+}
+
+.skeleton-card {
+  min-height: 72px;
+}
+
+@keyframes skeleton-shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
