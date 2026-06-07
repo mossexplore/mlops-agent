@@ -53,6 +53,15 @@ function empty(text) {
   return `<p class="empty-copy">${text}</p>`;
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 function chartReady() {
   return typeof window.Chart !== "undefined";
 }
@@ -71,6 +80,127 @@ function resetCanvas(container, canvasId, label) {
   container.classList.remove("is-empty");
   container.innerHTML = `<canvas id="${canvasId}" aria-label="${label}" role="img"></canvas>`;
   return container.querySelector("canvas");
+}
+
+function resetFallback(container, className) {
+  container.classList.remove("is-empty");
+  container.innerHTML = `<div class="${className}" role="img"></div>`;
+  return container.firstElementChild;
+}
+
+function pointsFor(values, width, height, padX, padY, maxValue) {
+  const usableWidth = width - padX * 2;
+  const usableHeight = height - padY * 2;
+  const count = Math.max(values.length - 1, 1);
+  return values.map((value, index) => {
+    const x = padX + (usableWidth * index) / count;
+    const y = height - padY - (usableHeight * (value || 0)) / maxValue;
+    return [Number(x.toFixed(2)), Number(y.toFixed(2))];
+  });
+}
+
+function pathFromPoints(points) {
+  return points.map(([x, y], index) => `${index ? "L" : "M"} ${x} ${y}`).join(" ");
+}
+
+function areaPath(points, height, padY) {
+  if (!points.length) return "";
+  const first = points[0];
+  const last = points[points.length - 1];
+  return `${pathFromPoints(points)} L ${last[0]} ${height - padY} L ${first[0]} ${height - padY} Z`;
+}
+
+function renderFallbackDaily(rows) {
+  const labels = rows.map((item) => item.date.slice(5));
+  const questionValues = rows.map((item) => item.questionCount || 0);
+  const likeValues = rows.map((item) => item.likeCount || 0);
+  const unlikeValues = rows.map((item) => item.unlikeCount || 0);
+  const maxValue = Math.max(...questionValues, ...likeValues, ...unlikeValues, 1);
+  const width = 820;
+  const height = 320;
+  const padX = 52;
+  const padY = 34;
+  const questions = pointsFor(questionValues, width, height, padX, padY, maxValue);
+  const likes = pointsFor(likeValues, width, height, padX, padY, maxValue);
+  const unlikes = pointsFor(unlikeValues, width, height, padX, padY, maxValue);
+  const gridLines = [0, 0.25, 0.5, 0.75, 1]
+    .map((ratio) => {
+      const y = height - padY - (height - padY * 2) * ratio;
+      const label = Math.round(maxValue * ratio);
+      return `
+        <line x1="${padX}" y1="${y}" x2="${width - padX}" y2="${y}" />
+        <text x="14" y="${y + 4}">${label}</text>
+      `;
+    })
+    .join("");
+  const xLabels = labels
+    .map((label, index) => {
+      const x = questions[index]?.[0] || padX;
+      return `<text class="x-label" x="${x}" y="${height - 8}">${escapeHtml(label)}</text>`;
+    })
+    .join("");
+  const circles = (points, className) =>
+    points.map(([x, y]) => `<circle class="${className}" cx="${x}" cy="${y}" r="3.6" />`).join("");
+
+  const target = resetFallback(dailyTrend, "fallback-chart fallback-line-chart");
+  target.innerHTML = `
+    <svg viewBox="0 0 ${width} ${height}" aria-label="每日使用趋势图">
+      <g class="chart-grid">${gridLines}</g>
+      <path class="series-area question-area" d="${areaPath(questions, height, padY)}"></path>
+      <path class="series-line question-line" d="${pathFromPoints(questions)}"></path>
+      <path class="series-line like-line" d="${pathFromPoints(likes)}"></path>
+      <path class="series-line unlike-line" d="${pathFromPoints(unlikes)}"></path>
+      <g>${circles(questions, "question-point")}${circles(likes, "like-point")}${circles(unlikes, "unlike-point")}</g>
+      <g class="chart-axis">${xLabels}</g>
+    </svg>
+    <div class="fallback-data-strip">
+      ${rows
+        .map(
+          (item) => `
+            <span>
+              <strong>${escapeHtml(item.date.slice(5))}</strong>
+              问 ${formatNumber(item.questionCount)} / 赞 ${formatNumber(item.likeCount)} / 踩 ${formatNumber(item.unlikeCount)}
+            </span>
+          `,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderFallbackFeedback(like, unlike) {
+  const total = Math.max(like + unlike, 1);
+  const likeRatio = Math.round((like / total) * 100);
+  const target = resetFallback(feedbackSplit, "fallback-chart fallback-donut-chart");
+  target.innerHTML = `
+    <div class="fallback-donut" style="--like:${likeRatio}%">
+      <span>${formatRate(unlike / total)}</span>
+      <small>点踩占比</small>
+    </div>
+    <div class="fallback-donut-legend">
+      <span class="legend-like">点赞 ${formatNumber(like)}</span>
+      <span class="legend-unlike">点踩 ${formatNumber(unlike)}</span>
+    </div>
+  `;
+}
+
+function renderFallbackBars(container, items, options) {
+  const topItems = items.slice(0, options.limit || 8);
+  const maxValue = Math.max(...topItems.map((item) => item.value || 0), 1);
+  const target = resetFallback(container, `fallback-chart fallback-bar-chart ${options.compact ? "compact" : ""}`);
+  target.innerHTML = topItems
+    .map(
+      (item) => `
+        <div class="fallback-bar-row">
+          <span>${escapeHtml(item.label)}</span>
+          <div class="fallback-bar-track">
+            <i style="width:${Math.max(((item.value || 0) / maxValue) * 100, 3)}%;--bar-color:${item.color || chartColors.question}"></i>
+          </div>
+          <strong>${formatNumber(item.value)}</strong>
+        </div>
+      `,
+    )
+    .join("");
 }
 
 function baseChartOptions(extra = {}) {
@@ -185,7 +315,7 @@ function renderDaily(rows) {
     return;
   }
   if (!chartReady()) {
-    setChartEmpty(dailyTrend, "Chart.js 未加载，无法渲染趋势图");
+    renderFallbackDaily(rows);
     return;
   }
 
@@ -253,7 +383,7 @@ function renderFeedback(summary) {
     return;
   }
   if (!chartReady()) {
-    setChartEmpty(feedbackSplit, "Chart.js 未加载，无法渲染反馈图");
+    renderFallbackFeedback(like, unlike);
     return;
   }
 
@@ -312,7 +442,15 @@ function renderReasons(items) {
     .join("");
 
   if (!chartReady()) {
-    setChartEmpty(reasonTop, "Chart.js 未加载，无法渲染原因排行图");
+    renderFallbackBars(
+      reasonTop,
+      items.map((item) => ({
+        label: item.reason,
+        value: item.count || 0,
+        color: chartColors.unlike,
+      })),
+      { compact: true, limit: 6 },
+    );
     return;
   }
 
@@ -447,7 +585,15 @@ function renderUsers(items) {
       }),
     });
   } else {
-    setChartEmpty(topUsersChartWrap, "Chart.js 未加载，无法渲染用户排行图");
+    renderFallbackBars(
+      topUsersChartWrap,
+      items.map((item) => ({
+        label: item.userId,
+        value: item.questionCount || 0,
+        color: chartColors.question,
+      })),
+      { limit: 8 },
+    );
   }
 
   topUsers.innerHTML = items
