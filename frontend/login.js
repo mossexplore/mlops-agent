@@ -23,6 +23,7 @@ form.addEventListener("submit", async (event) => {
     if (!response.ok || payload.result?.code !== 0) {
       throw new Error(payload.result?.des || "登录失败");
     }
+    button.textContent = "登录成功";
     window.location.href = "/";
   } catch (error) {
     message.textContent = error.message || "登录失败";

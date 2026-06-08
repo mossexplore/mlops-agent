@@ -1,40 +1,39 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-mode="dark" data-density="regular">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Wise MLOps Login</title>
-    <link rel="stylesheet" href="/static/tokens.css" />
-    <link rel="stylesheet" href="/static/styles.css" />
-    <link rel="stylesheet" href="/static/login.css" />
-    <link rel="stylesheet" href="/static/components.css" />
+    <title>Wise MLOps · 登录</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2338bdf8'/%3E%3Ctext x='16' y='22' font-size='18' font-family='sans-serif' font-weight='800' fill='%2304141f' text-anchor='middle'%3EW%3C/text%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/static/console.css" />
+    <link rel="stylesheet" href="/static/extra.css" />
   </head>
-  <body>
-    <div class="app-background" aria-hidden="true"></div>
+  <body class="login-body">
     <main class="login-shell">
-      <form id="loginForm" class="login-card">
-        <header class="brand">
-          <div class="brand-mark">W</div>
-          <div>
-            <h1>Wise MLOps Agent</h1>
-            <p>Production Access</p>
-          </div>
-        </header>
-        <div class="login-title">
-          <p>管理员登录</p>
-          <h2>进入诊断工作台</h2>
+      <div class="login-brand">
+        <div class="brand-mark">W</div>
+        <div>
+          <h1>Wise MLOps Agent</h1>
+          <p>diagnostic agent</p>
         </div>
-        <label>
-          用户名
-          <input id="username" autocomplete="username" value="admin" required />
+      </div>
+      <div class="login-title">
+        <div class="kicker">Production Access</div>
+        <h2>进入诊断工作台</h2>
+      </div>
+      <form id="loginForm" class="login-form">
+        <label class="lbl">
+          <span>用户名</span>
+          <input id="username" class="field" autocomplete="username" value="admin" required />
         </label>
-        <label>
-          密码
-          <input id="password" autocomplete="current-password" type="password" required />
+        <label class="lbl">
+          <span>密码</span>
+          <input id="password" class="field" autocomplete="current-password" type="password" required />
         </label>
-        <button id="loginButton" type="submit">登录</button>
+        <button id="loginButton" class="btn primary" type="submit">登录</button>
         <p id="loginMessage" class="login-message"></p>
       </form>
+      <p class="login-hint">Wise MLOps Console · Explainable Diagnostic Agent</p>
     </main>
     <script src="/static/login.js"></script>
   </body>

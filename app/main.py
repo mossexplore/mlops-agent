@@ -126,44 +126,37 @@ def dump_model(model):
     return model.model_dump() if hasattr(model, "model_dump") else model.dict()
 
 
-@app.get("/")
-def index(request: Request) -> FileResponse:
+def _serve_app(request: Request):
+    """Serve the single-page console (client-side routing handles the view)."""
     redirect = require_page_session(request)
     if redirect:
         return redirect
     return FileResponse(STATIC_DIR / "index.html")
 
 
+@app.get("/")
+def index(request: Request):
+    return _serve_app(request)
+
+
 @app.get("/knowledge")
-def knowledge_page(request: Request) -> FileResponse:
-    redirect = require_page_session(request)
-    if redirect:
-        return redirect
-    return FileResponse(STATIC_DIR / "knowledge.html")
+def knowledge_page(request: Request):
+    return _serve_app(request)
 
 
 @app.get("/runbooks")
-def runbooks_page(request: Request) -> FileResponse:
-    redirect = require_page_session(request)
-    if redirect:
-        return redirect
-    return FileResponse(STATIC_DIR / "runbooks.html")
+def runbooks_page(request: Request):
+    return _serve_app(request)
 
 
 @app.get("/ops")
-def ops_page(request: Request) -> FileResponse:
-    redirect = require_page_session(request)
-    if redirect:
-        return redirect
-    return FileResponse(STATIC_DIR / "ops.html")
+def ops_page(request: Request):
+    return _serve_app(request)
 
 
 @app.get("/quality")
-def quality_page(request: Request) -> FileResponse:
-    redirect = require_page_session(request)
-    if redirect:
-        return redirect
-    return FileResponse(STATIC_DIR / "quality.html")
+def quality_page(request: Request):
+    return _serve_app(request)
 
 
 @app.get("/login")

@@ -1,146 +1,32 @@
 <!doctype html>
-<html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Wise MLOps Agent</title>
-    <link rel="stylesheet" href="/static/tokens.css" />
-    <link rel="stylesheet" href="/static/styles.css" />
-    <link rel="stylesheet" href="/static/components.css" />
-  </head>
-  <body>
-    <div class="app-background" aria-hidden="true"></div>
-    <main class="shell">
-      <aside class="sidebar">
-        <header class="brand">
-          <div class="brand-mark">W</div>
-          <div>
-            <h1>Wise MLOps Agent</h1>
-            <p>Runbook-grade diagnostics</p>
-          </div>
-        </header>
-        <nav class="nav-links">
-          <a href="/" class="active">诊断会话</a>
-          <a href="/knowledge">知识库</a>
-          <a href="/runbooks">Runbook</a>
-          <a href="/ops">运营看板</a>
-          <a href="/quality">质量闭环</a>
-          <button id="logoutButton" class="nav-logout" type="button">退出</button>
-        </nav>
+<html lang="zh-CN" data-mode="dark" data-density="regular">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wise MLOps Console</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2338bdf8'/%3E%3Ctext x='16' y='22' font-size='18' font-family='sans-serif' font-weight='800' fill='%2304141f' text-anchor='middle'%3EW%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="/static/console.css" />
+  <link rel="stylesheet" href="/static/views.css" />
+  <link rel="stylesheet" href="/static/views2.css" />
+  <link rel="stylesheet" href="/static/extra.css" />
+</head>
+<body>
+  <div id="root"></div>
 
-        <section class="context-panel">
-          <div class="panel-title">
-            <span>上下文</span>
-            <button id="newConversation" class="icon-button" type="button" title="新会话">+</button>
-          </div>
-          <label>
-            用户
-            <input id="userId" value="l0123456" />
-          </label>
-          <label>
-            来源
-            <select id="service">
-              <option>Wise</option>
-              <option>MTP</option>
-              <option>MEP</option>
-            </select>
-          </label>
-          <label>
-            场景
-            <input id="scene" value="模型任务" />
-          </label>
-          <label class="switch">
-            <input id="deepThinking" type="checkbox" />
-            <span>深度思考</span>
-          </label>
-          <label class="switch">
-            <input id="runbookMode" type="checkbox" />
-            <span>Runbook 回答</span>
-          </label>
-        </section>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
 
-        <section class="history-panel">
-          <div class="panel-title">
-            <span>历史会话</span>
-            <button id="loadHistory" class="ghost-button" type="button">刷新</button>
-          </div>
-          <label class="search-wrap">
-            <span>搜索</span>
-            <input id="historySearch" placeholder="搜索会话或标题" />
-          </label>
-          <div class="history" id="history"></div>
-        </section>
-      </aside>
-
-      <section class="workspace">
-        <header class="topbar">
-          <div>
-            <p id="conversationLabel">当前会话</p>
-            <h2 id="title">MTP训练任务诊断</h2>
-          </div>
-          <div class="status-strip">
-            <span>FastAPI</span>
-            <span>SSE</span>
-            <span>SQLite</span>
-          </div>
-        </header>
-
-        <section class="messages" id="messages">
-          <div class="empty-state" id="emptyState">
-            <div class="terminal-mark" aria-hidden="true">
-              <svg viewBox="0 0 24 24">
-                <path d="m7 8 4 4-4 4" />
-                <path d="M13 17h6" />
-              </svg>
-            </div>
-            <div class="empty-title">Wise MLOps Agent</div>
-            <p class="empty-subtitle">专业智能诊断伙伴，为模型任务、资源异常和平台日志提供排查建议。</p>
-            <div class="empty-tags">
-              <button type="button" data-quick-prompt="1401027 insufficient memory 报错">Memory OOM</button>
-              <button type="button" data-quick-prompt="训练任务 Pending 很久，帮我按 Runbook 排查">Pending</button>
-              <button type="button" data-quick-prompt="GPU 利用率很低但任务很慢，应该看哪些证据">GPU 低利用</button>
-              <button type="button" data-quick-prompt="checkpoint 加载阶段失败，如何定位原因">Checkpoint</button>
-              <button type="button" data-quick-prompt="数据集读取很慢导致训练卡住，怎么排查">Dataset</button>
-            </div>
-          </div>
-        </section>
-        <button id="scrollBottom" class="scroll-bottom" type="button" hidden>回到底部</button>
-
-        <form class="composer" id="composer">
-          <div class="composer-box">
-            <textarea id="query" rows="1" placeholder="输入您的问题，按 Enter 发送...">1401027 insufficient memory 报错</textarea>
-            <button id="stop" class="stop-button" type="button" aria-label="停止生成" title="停止生成" hidden>
-              <span aria-hidden="true"></span>
-            </button>
-            <button id="send" type="submit" aria-label="发送">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M5 12h13" />
-                <path d="m13 6 6 6-6 6" />
-              </svg>
-            </button>
-          </div>
-          <p class="composer-note">AI 可能产生不准确的信息，请核实重要内容。</p>
-        </form>
-      </section>
-    </main>
-
-    <dialog id="feedbackDialog">
-      <form method="dialog" class="feedback-form">
-        <h3>反馈原因</h3>
-        <textarea id="feedbackText" rows="4" placeholder="补充你的意见"></textarea>
-        <div class="chips">
-          <label><input type="checkbox" value="回答没有用" />回答没有用</label>
-          <label><input type="checkbox" value="没有理解我的意图" />没有理解我的意图</label>
-          <label><input type="checkbox" value="缺少操作步骤" />缺少操作步骤</label>
-        </div>
-        <div class="dialog-actions">
-          <button value="cancel">取消</button>
-          <button id="submitUnlike" value="default" class="primary">提交</button>
-        </div>
-      </form>
-    </dialog>
-
-    <script src="/static/session.js"></script>
-    <script src="/static/app.js?v=runbook-mode-20260606-2"></script>
-  </body>
+  <script src="/static/api.js"></script>
+  <script src="/static/helpers.js"></script>
+  <script type="text/babel" src="/static/icons.jsx"></script>
+  <script type="text/babel" src="/static/tweaks-panel.jsx"></script>
+  <script type="text/babel" src="/static/ui.jsx"></script>
+  <script type="text/babel" src="/static/view-ops.jsx"></script>
+  <script type="text/babel" src="/static/view-knowledge.jsx"></script>
+  <script type="text/babel" src="/static/view-runbooks.jsx"></script>
+  <script type="text/babel" src="/static/view-quality.jsx"></script>
+  <script type="text/babel" src="/static/view-chat.jsx"></script>
+  <script type="text/babel" src="/static/app.jsx"></script>
+</body>
 </html>
