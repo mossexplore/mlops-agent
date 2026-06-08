@@ -1,6 +1,6 @@
 # Wise MLOps Agent
 
-一个按 `wisemlops-agent开发.md` 实现的 MLOps 诊断 Agent 示例项目，包含 FastAPI 后端、SSE 流式聊天、点赞/点踩反馈、历史会话查询和一个可直接访问的 Web 工作台。
+一个按 `wisemlops-agent开发.md` 实现的 MLOps 诊断 Agent 示例项目，包含 FastAPI 后端、SSE 流式聊天、点赞/点踩反馈、历史会话查询和一个可直接访问的 Web 工作台。前端为按 Claude Design 设计稿实现的单页控制台（React SPA），覆盖诊断会话、知识库、Runbook、运营看板、质量闭环五大工作台。
 
 ## 功能
 
@@ -42,7 +42,27 @@
 
 - 后端：Python、FastAPI、Uvicorn
 - 存储：SQLite，表结构对应设计文档中的 `t_conversation`、`t_chat_memory`、`t_conversation_context`、`t_chat_feedback`
-- 前端：原生 Web Components 风格的 HTML/CSS/JavaScript，由 FastAPI 静态托管
+- 前端：React 18 单页应用（SPA），由浏览器内 Babel 编译 JSX，无需打包构建，统一设计系统（深色主题、强调色、信息密度），由 FastAPI 静态托管
+
+### 前端结构
+
+前端位于 `frontend/`，由 FastAPI 在 `/static` 下托管，`index.html` 为单页入口，按路径（`/`、`/knowledge`、`/runbooks`、`/ops`、`/quality`）做客户端路由：
+
+```text
+frontend/
+  index.html            # SPA 入口（React/Babel CDN）
+  login.html / login.js # 登录页
+  api.js                # 后端接口与 SSE 流式封装
+  helpers.js            # Markdown 渲染、标签与工具函数
+  app.jsx               # 侧栏 / 顶栏 / 路由外壳
+  view-chat.jsx         # 诊断会话（SSE 流式 + Agent Trace + 多轮状态）
+  view-knowledge.jsx    # 本地知识库管理
+  view-runbooks.jsx     # 诊断 Runbook 编排
+  view-ops.jsx          # 运营看板
+  view-quality.jsx      # 质量评估与反馈闭环
+  ui.jsx / icons.jsx    # 通用组件、图表与图标
+  console.css / views.css / views2.css / extra.css  # 设计系统与视图样式
+```
 
 ## 启动方式
 
