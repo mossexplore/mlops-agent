@@ -176,6 +176,33 @@ skills/local_markdown_knowledge/indexes/
 
 当用户问题显式包含“知识库 / 文档 / 手册 / 内部”等关键词，或检索分数足够高时，聊天接口会优先基于本地 Markdown 检索结果回答，并附来源文件与标题。为了避免草稿或过期知识污染回答，聊天和检索测试只使用 `published` 状态的知识。
 
+### 检索：混合 RAG（稀疏 + 稠密）
+
+知识检索采用业界常见的 **混合检索（Hybrid Retrieval）**，并对结果做相关性过滤：
+
+- **稀疏分支**：纯 Python TF-IDF 余弦相似度，擅长报错码、英文关键词、精确词面匹配（如 `1401027`）。
+- **稠密分支（可选）**：`sentence-transformers` 句向量 + `faiss` 向量检索，擅长中文自然语言、同义/口语化、改写提问（词面不重合也能命中）。
+- **融合**：用 Reciprocal Rank Fusion（RRF）合并两路排名；返回的 `score` 回标定为真实相似度（保持与下游 0.18 阈值、`min_score` 过滤兼容）。
+- **优雅降级**：未安装稠密依赖、模型无法加载（离线/无缓存）或显式关闭时，自动回退为纯 TF-IDF，功能不受影响。
+- 切分、索引与 `published` 过滤逻辑保持不变；保存/切换状态时会自动重建稀疏与稠密两份索引。
+
+默认是纯 TF-IDF。启用稠密/混合检索：
+
+```bash
+# 安装可选依赖（包含 torch，体积较大）
+pip install -r skills/local_markdown_knowledge/requirements.txt
+# 重建索引（首次会下载 embedding 模型，约 95MB）
+python skills/local_markdown_knowledge/scripts/build_index.py
+```
+
+相关环境变量：
+
+- `WISE_EMBED_ENABLED`：是否启用稠密检索，默认 `1`，设为 `0` 强制纯 TF-IDF。
+- `WISE_EMBED_MODEL`：embedding 模型，默认 `BAAI/bge-small-zh-v1.5`（中文为主；如需更强跨语言可换 `BAAI/bge-m3` 等）。
+- `WISE_EMBED_FLOOR`：稠密余弦的“相似度地板”，默认 `0.35`，用于把中文模型偏高的相似度基线重标定到 `[0,1]`，过滤弱相关噪声。
+
+> 索引文件（`indexes/dense.faiss`、`indexes/dense_meta.json` 等）已在 `.gitignore` 中忽略，不会进入仓库。
+
 知识库历史数据会记录到 SQLite：
 
 - `t_knowledge_file`：当前 Markdown 文件元信息，包括文件名、标题、路径、大小、内容 hash、预览、创建时间、更新时间。

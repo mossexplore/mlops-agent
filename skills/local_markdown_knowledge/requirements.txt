@@ -1,5 +1,7 @@
-# The current project uses a lightweight lexical retriever by default.
-# These optional packages can replace it with vector retrieval later.
+# Optional dependencies. Without them the retriever runs in pure-Python TF-IDF
+# mode. Installing them enables hybrid retrieval (sparse TF-IDF + dense
+# embeddings via sentence-transformers + faiss, fused with RRF); see
+# scripts/embedding.py and scripts/retriever.py. Heavy (pulls torch).
 langchain-core>=0.3.0
 langgraph>=0.2.0
 sentence-transformers>=2.7.0
