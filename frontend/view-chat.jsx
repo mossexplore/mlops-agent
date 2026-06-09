@@ -305,7 +305,7 @@ function ChatView({ ctx, setCtx, runbookMode, setRunbookMode, deepThink, setDeep
             {messages.length === 0 && !streaming && (
               <div className="chat-empty fade-in">
                 <div className="ce-mark"><Icon name="terminal" size={30} /></div>
-                <h2>Wise MLOps Agent</h2>
+                <h2>WiseMLOps Agent</h2>
                 <p>可解释的智能诊断伙伴，为模型任务、资源异常与平台日志提供可执行的排查建议。</p>
                 <div className="quick-grid">
                   {H.QUICK_PROMPTS.map((p) => (

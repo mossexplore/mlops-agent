@@ -42,9 +42,9 @@ function Rail({ active, setActive, collapsed, setCollapsed, ctx, authEnabled, on
   return (
     <aside className="rail">
       <div className="brand">
-        <div className="brand-mark">W</div>
+        <div className="brand-mark">AI</div>
         <div className="brand-text">
-          <h1>Wise MLOps</h1>
+          <h1>WiseMLOps</h1>
           <p>diagnostic agent</p>
         </div>
       </div>
