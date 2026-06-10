@@ -144,7 +144,7 @@ function OpsView() {
   ];
 
   return (
-    <div className="view-pad fade-in">
+    <div className="view-pad fade-in view-fit">
       <div className="view-wrap">
         <div className="ops-filterbar">
           <div className="ofb-left">
@@ -158,7 +158,7 @@ function OpsView() {
             {metrics.map((m) => <Metric key={m.label} {...m} />)}
           </div>
 
-          <div className="ops-grid-2">
+          <div className="ops-grid-2 grid-align">
             <Card className="span-2">
               <CardHead kicker="Usage Trend" title="每日使用趋势">
                 <div className="legend">
@@ -169,7 +169,7 @@ function OpsView() {
               </CardHead>
               <div className="card-pad">
                 {daily.length ? (
-                  <LineChart data={daily} series={[{ key: 'ask' }, { key: 'like' }, { key: 'unlike', area: false }]} height={250} />
+                  <LineChart data={daily} series={[{ key: 'ask' }, { key: 'like' }, { key: 'unlike', area: false }]} height={220} />
                 ) : <Empty icon="chart">该时间范围暂无数据</Empty>}
               </div>
             </Card>
@@ -197,12 +197,12 @@ function OpsView() {
             </Card>
           </div>
 
-          <div className="ops-grid-2">
+          <div className="ops-grid-2 grid-flex">
             <Card>
               <CardHead kicker="User Ranking" title="高频使用用户" />
               <div className="card-pad">
                 {topUsers.length ? (
-                  <div className="rowlist">
+                  <div className="rowlist list-scroll">
                     {topUsers.map((u, i) => (
                       <div key={u.user} className="row">
                         <span className={`rank ${i === 0 ? 'top' : ''}`}>{i + 1}</span>
@@ -227,7 +227,7 @@ function OpsView() {
               </CardHead>
               <div className="card-pad">
                 {recentUnlikes.length ? (
-                  <div className="rowlist">
+                  <div className="rowlist list-scroll">
                     {recentUnlikes.map((r, i) => {
                       const types = r.reason?.feedbackInfoTypes || [];
                       const reasonText = types.map(H.reasonLabel).join(' / ') || '点踩';

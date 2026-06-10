@@ -112,7 +112,7 @@ function QualityView({ toast }) {
   }
 
   return (
-    <div className="view-pad fade-in">
+    <div className="view-pad fade-in view-fit">
       <div className="view-wrap">
         <div className="metric-grid q-metric-grid">
           {metricTiles.map((t) => (
@@ -123,14 +123,14 @@ function QualityView({ toast }) {
           ))}
         </div>
 
-        <div className="ops-grid-2">
+        <div className="ops-grid-2 grid-flex">
           <Card>
             <CardHead kicker="Annotation Queue" title="点踩反馈工作台">
               <Badge kind="warn">{pendingCount} 待处理</Badge>
             </CardHead>
             <div className="card-pad">
               {queue.length === 0 ? <Empty icon="thumb">暂无点踩反馈</Empty> : (
-                <div className="q-queue">
+                <div className="q-queue list-scroll">
                   {queue.map((f) => {
                     const st = QSTATUS[f.status] || QSTATUS.pending;
                     const d = draft[f.answerMessageId] || {};
@@ -166,7 +166,7 @@ function QualityView({ toast }) {
             <CardHead kicker="Golden Dataset" title="评测集沉淀">
               <Btn variant="primary" size="sm" icon="plus" onClick={saveCase}>保存用例</Btn>
             </CardHead>
-            <div className="card-pad" style={{ display: 'grid', gap: 14 }}>
+            <div className="card-pad">
               <div className="q-case-form">
                 <input className="field" placeholder="用例标题，例如：OOM 资源不足诊断" value={caseForm.title} onChange={(e) => setCaseForm({ ...caseForm, title: e.target.value })} />
                 <textarea className="field" rows="2" placeholder="输入问题" value={caseForm.query} onChange={(e) => setCaseForm({ ...caseForm, query: e.target.value })} />
@@ -175,7 +175,7 @@ function QualityView({ toast }) {
                   <input className="field" placeholder="禁止出现内容，逗号分隔" value={caseForm.forbidden} onChange={(e) => setCaseForm({ ...caseForm, forbidden: e.target.value })} />
                 </div>
               </div>
-              <div className="q-cases">
+              <div className="q-cases list-scroll">
                 {cases.length === 0 ? <Empty icon="target">暂无评测用例</Empty> : cases.map((c, i) => (
                   <div key={c.caseId || c.id || i} className="q-case">
                     <div className="q-case-top">
@@ -195,18 +195,18 @@ function QualityView({ toast }) {
           </Card>
         </div>
 
-        <div className="ops-grid-2">
+        <div className="ops-grid-2 grid-flex">
           <Card>
             <CardHead kicker="Regression Eval" title="自动评测">
               <Btn variant="primary" size="sm" icon="play" onClick={runEval}>运行评测</Btn>
             </CardHead>
-            <div className="card-pad" style={{ display: 'grid', gap: 14 }}>
+            <div className="card-pad">
               <div className="q-run-form">
                 <input className="field" value={runForm.name} onChange={(e) => setRunForm({ ...runForm, name: e.target.value })} />
                 <input className="field mono" value={runForm.variant} onChange={(e) => setRunForm({ ...runForm, variant: e.target.value })} />
                 <input className="field mono" placeholder="prompt 版本" value={runForm.promptVersion} onChange={(e) => setRunForm({ ...runForm, promptVersion: e.target.value })} />
               </div>
-              <div className="q-runs">
+              <div className="q-runs list-scroll">
                 {runs.length === 0 ? <Empty icon="play">暂无评测运行记录</Empty> : runs.map((r, i) => {
                   const passRate = Math.round((r.passRate || 0) * 100);
                   return (
@@ -235,7 +235,7 @@ function QualityView({ toast }) {
             <CardHead kicker="Experiment Design" title="A/B 实验">
               <Btn variant="primary" size="sm" icon="plus" onClick={saveExperiment}>保存实验</Btn>
             </CardHead>
-            <div className="card-pad" style={{ display: 'grid', gap: 14 }}>
+            <div className="card-pad">
               <div className="q-exp-form">
                 <input className="field" placeholder="实验名称，例如：检索阈值对比" value={expForm.name} onChange={(e) => setExpForm({ ...expForm, name: e.target.value })} />
                 <div className="q-form-2">
@@ -249,7 +249,7 @@ function QualityView({ toast }) {
                   <option value="avgScore">评测平均分</option>
                 </select>
               </div>
-              <div className="q-exps">
+              <div className="q-exps list-scroll">
                 {experiments.length === 0 ? <Empty icon="flask">暂无 A/B 实验配置</Empty> : experiments.map((e, i) => {
                   const variants = e.variants || [];
                   const split = e.trafficSplit ? Object.values(e.trafficSplit).join(' / ') : '';
