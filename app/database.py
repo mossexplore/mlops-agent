@@ -34,6 +34,18 @@ def safe_json_loads(value: Optional[str], default: Any) -> Any:
 
 @contextmanager
 def connect(db_path: Optional[Path] = None) -> Iterable[sqlite3.Connection]:
+    # An explicit db_path always means a local SQLite file (tests, tooling).
+    if db_path is None and settings.db_backend == "d1":
+        from .d1 import d1_connect
+
+        conn = d1_connect()
+        try:
+            yield conn
+            conn.commit()
+        finally:
+            conn.close()
+        return
+
     path = db_path or DB_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path)

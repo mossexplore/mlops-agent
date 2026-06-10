@@ -113,6 +113,50 @@ WISE_CORS_ORIGINS=http://your-domain.example.com
 
 开启认证后，访问 `/`、`/knowledge`、`/ops` 会先进入 `/login`。知识库和运营看板接口需要管理员会话。
 
+## 数据库后端：本地 SQLite 或 Cloudflare D1
+
+通过 `WISE_DB_BACKEND` 切换数据库后端，业务代码不变：
+
+- `sqlite`（默认）：本地文件数据库（`WISE_AGENT_DB_PATH`），适合本地开发与单机部署。
+- `d1`：Cloudflare D1（托管 SQLite），应用通过 D1 HTTP API 读写，适合托管/无状态部署。
+
+### Cloudflare 侧配置
+
+1. 创建 D1 数据库（任选其一）：
+   - 命令行：`npx wrangler login && npx wrangler d1 create wise-mlops-agent`，输出中的 `database_id` 即 `CLOUDFLARE_D1_DATABASE_ID`；
+   - 控制台：Dashboard → Storage & Databases → D1 → Create Database。
+2. 获取 Account ID：Dashboard 任意域名/Workers 页面右侧栏，或 `npx wrangler whoami`。
+3. 创建 API Token：Dashboard → My Profile → API Tokens → Create Token → Custom Token，权限选择 **Account / D1 / Edit**，即 `CLOUDFLARE_API_TOKEN`。
+
+### 应用侧配置
+
+在 `.env` 中设置：
+
+```bash
+WISE_DB_BACKEND=d1
+CLOUDFLARE_ACCOUNT_ID=你的AccountID
+CLOUDFLARE_D1_DATABASE_ID=你的D1数据库ID
+CLOUDFLARE_API_TOKEN=你的APIToken
+```
+
+应用启动时会自动在 D1 中建表（`init_db` 走同一套 `CREATE TABLE IF NOT EXISTS`），无需手工初始化。
+
+### 迁移既有 SQLite 数据
+
+```bash
+# 1. 从本地 SQLite 导出 D1 兼容的 SQL（自动剔除 BEGIN/COMMIT/PRAGMA 等 D1 不支持的语句）
+python scripts/export_d1_dump.py --db data/agent.db --out data/d1_dump.sql
+
+# 2. 导入 D1（--remote 写远端；去掉 --remote 写 wrangler 本地模拟库）
+npx wrangler d1 execute wise-mlops-agent --remote --file=data/d1_dump.sql
+```
+
+### 注意事项
+
+- D1 模式下每条 SQL 是一次 HTTPS 往返，延迟显著高于本地 SQLite；D1 按语句自动提交，跨语句不具备事务原子性。
+- 本地开发建议保持 `WISE_DB_BACKEND=sqlite`；也可以本地直连远端 D1（设置上述三个变量即可），便于联调。
+- 测试套件（pytest）始终走本地 SQLite，不依赖 Cloudflare。
+
 ## Docker 部署
 
 ```bash
