@@ -8,6 +8,7 @@
 - `GET /readyz`：应用就绪检查，会验证数据库连接。
 - `POST /agent/v1/auth/login`：管理员登录，生产环境可通过环境变量开启认证。
 - `POST /agent/v1/auth/logout`：退出登录并清理会话 Cookie。
+- `GET /agent/v1/auth/me`：查询当前登录用户和认证开关状态。
 - `POST /agent/v1/assistant/chat`：用户提问，Agent 通过 `text/event-stream` 按 `data: {...}` 流式返回。
 - `POST /agent/v1/assistant/feedback`：对 Agent 回复点赞、点踩或置为 `NONE`，点踩可提交原因。
 - `POST /agent/v1/assistant/conversation/list`：查询用户历史会话列表。
@@ -15,14 +16,19 @@
 - `POST /agent/v1/assistant/trace/detail`：查询一次 Agent 回复的 trace 和 span 明细。
 - `POST /agent/v1/assistant/diagnostic/state`：查询某个会话的多轮诊断状态。
 - `POST /agent/v1/quality/dashboard`：查询质量闭环工作台聚合数据。
+- `POST /agent/v1/quality/metrics`：查询质量指标汇总。
 - `POST /agent/v1/quality/feedback/list`：查询点踩反馈与人工标注队列。
 - `POST /agent/v1/quality/feedback/annotate`：标注点踩原因，支持知识缺失、检索错误、回答泛泛、步骤不可执行、误判场景。
 - `POST /agent/v1/quality/eval-case/save`：新增或更新固定评测用例。
 - `POST /agent/v1/quality/eval-case/from-feedback`：将典型点踩反馈沉淀为评测用例。
+- `POST /agent/v1/quality/eval-case/list`：查询固定评测用例列表。
 - `POST /agent/v1/quality/eval/run`：运行固定评测集，产出通过率、平均分和知识命中率。
+- `POST /agent/v1/quality/eval/run/list`：查询历史评测运行记录。
 - `POST /agent/v1/quality/experiment/save`：保存 A/B 实验配置。
+- `POST /agent/v1/quality/experiment/list`：查询 A/B 实验配置列表。
 - `POST /agent/v1/knowledge/save`：保存本地 Markdown 知识，并自动重建检索索引。
 - `POST /agent/v1/knowledge/list`：查询本地知识文件列表。
+- `POST /agent/v1/knowledge/detail`：查询单个 Markdown 知识文件详情。
 - `POST /agent/v1/knowledge/search`：检索本地 Markdown 知识片段。
 - `POST /agent/v1/knowledge/status`：切换知识生命周期状态，支持草稿、待审核、已发布、已归档。
 - `POST /agent/v1/knowledge/revision/list`：查询知识内容和状态变更版本历史。
@@ -41,7 +47,7 @@
 ## 技术栈
 
 - 后端：Python、FastAPI、Uvicorn
-- 存储：SQLite，表结构对应设计文档中的 `t_conversation`、`t_chat_memory`、`t_conversation_context`、`t_chat_feedback`
+- 存储：SQLite 默认本地存储，可通过 `WISE_DB_BACKEND=d1` 切换到 Cloudflare D1
 - 前端：React 18 单页应用（SPA），由浏览器内 Babel 编译 JSX，无需打包构建，统一设计系统（深色主题、强调色、信息密度），由 FastAPI 静态托管
 
 ### 前端结构
@@ -111,7 +117,7 @@ WISE_CORS_ORIGINS=http://your-domain.example.com
 - `WISE_SESSION_TTL_SECONDS`：登录会话有效期。
 - `WISE_CORS_ORIGINS`：允许跨域来源，多个地址用英文逗号分隔。
 
-开启认证后，访问 `/`、`/knowledge`、`/ops` 会先进入 `/login`。知识库和运营看板接口需要管理员会话。
+开启认证后，访问 `/`、`/knowledge`、`/runbooks`、`/ops`、`/quality` 会先进入 `/login`。知识库、Runbook、运营看板和质量闭环等管理接口需要管理员会话。
 
 ## 数据库后端：本地 SQLite 或 Cloudflare D1
 
@@ -230,7 +236,7 @@ skills/local_markdown_knowledge/indexes/
 - **优雅降级**：未安装稠密依赖、模型无法加载（离线/无缓存）或显式关闭时，自动回退为纯 TF-IDF，功能不受影响。
 - 切分、索引与 `published` 过滤逻辑保持不变；保存/切换状态时会自动重建稀疏与稠密两份索引。
 
-默认是纯 TF-IDF。启用稠密/混合检索：
+默认依赖安装只包含纯 TF-IDF。安装可选稠密依赖后，系统会在 `WISE_EMBED_ENABLED` 未关闭时尝试构建 dense 索引；如果模型不可用、依赖缺失或显式设为 `0`，会自动回退到纯 TF-IDF。启用稠密/混合检索：
 
 ```bash
 # 安装可选依赖（包含 torch，体积较大）
@@ -433,7 +439,13 @@ curl -X POST http://127.0.0.1:8000/agent/v1/assistant/trace/detail \
 ## 测试
 
 ```bash
-pytest
+.venv/bin/pytest -q
+```
+
+如果本机安装了可选 embedding 依赖但模型未缓存，知识库索引相关测试可能会尝试加载模型。需要强制走纯 TF-IDF 路径时可运行：
+
+```bash
+WISE_EMBED_ENABLED=0 .venv/bin/pytest -q
 ```
 
 ## 版权与许可
